@@ -687,3 +687,61 @@ export type AlertLogEntry = {
 }
 
 export type AlertLogStore = Record<string, AlertLogEntry>
+
+/* ---------- Phase G: 通知設定（レポート定期配信・ダッシュボード確認リマインド） ----------
+ * 既存の NotificationGroup（宛先 × 送信タイミング）はそのまま再利用し、
+ * レポート / リマインドそれぞれが「どの通知グループ宛に送るか」を選ぶ構成にする。
+ *
+ * 配信形式は当面リンク方式: メール本文にレポート閲覧用 URL を載せる前提で、
+ * 添付配信は将来的に追加。 */
+
+/** レポート定期配信の設定 */
+export type ReportSchedule = {
+  id: string
+  /** 表示名（例: "週次レポート（月曜 9:00）"） */
+  name: string
+  /** ON/OFF */
+  enabled: boolean
+  /** 配信するレポート種別 */
+  reportKind: ReportKind
+  /** 対象センサー ID。空配列なら全センサー（取り込み済み）を対象とする扱い */
+  targetSensorIds: string[]
+  /** 配信先の通知グループ ID。null なら未設定（実際の配信は行えない） */
+  notificationGroupId: string | null
+  /** 配信時刻 "HH:MM"（24h） */
+  deliveryTime: string
+  /** 週報の場合: 何曜日に配信するか (0=日, 1=月, ..., 6=土)。既定 1=月曜 */
+  weeklyDayOfWeek?: number
+  /** 月報の場合: 月の何日に配信するか (1..28)。既定 1 */
+  monthlyDayOfMonth?: number
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type ReportScheduleStore = Record<string, ReportSchedule>
+
+/** ダッシュボード確認リマインドの頻度 */
+export type DashboardReminderFrequency = 'daily' | 'weekly'
+
+/** ダッシュボード確認リマインドの設定 */
+export type DashboardReminder = {
+  id: string
+  /** 表示名（例: "毎朝の確認リマインド"） */
+  name: string
+  /** ON/OFF */
+  enabled: boolean
+  /** 対象ダッシュボード ID。null なら全ダッシュボード */
+  dashboardId: string | null
+  /** 確認頻度 */
+  frequency: DashboardReminderFrequency
+  /** この時刻を過ぎても当日の DashboardCheckin が無ければ通知 */
+  deadlineTime: string
+  /** 週次の場合: 確認すべき曜日 (0..6)。既定 1=月曜 */
+  weeklyDayOfWeek?: number
+  /** 配信先の通知グループ ID */
+  notificationGroupId: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type DashboardReminderStore = Record<string, DashboardReminder>

@@ -82,6 +82,8 @@ type Props = {
   onGoRecords: () => void
   /** Phase E-1: 初期画面の「連携設定へ」リンクで使う */
   onGoSettings: () => void
+  /** Phase G: ダッシュボード確認リマインド一覧（バナー表示用） */
+  dashboardReminders: import('../../types').DashboardReminderStore
 }
 
 const PERIOD_MODE_KEY = 'miterude:dashboard:period-mode'
@@ -151,6 +153,7 @@ export function DashboardView({
   onCreateCheckin,
   onGoRecords,
   onGoSettings,
+  dashboardReminders,
 }: Props) {
   const sensorList = useMemo(() => Object.values(sensors), [sensors])
 
@@ -357,6 +360,43 @@ export function DashboardView({
           </span>
         </div>
       )}
+
+      {/* Phase G: 確認リマインド設定の有無を 1 行で示す。クリックで通知設定へ */}
+      {(() => {
+        const matched = Object.values(dashboardReminders).filter(
+          (r) =>
+            r.enabled &&
+            (r.dashboardId == null || r.dashboardId === dashboard.id),
+        )
+        return (
+          <div className="reminder-banner">
+            <ClipboardCheck size={14} className="reminder-banner-icon" />
+            {matched.length === 0 ? (
+              <span>
+                確認リマインド未設定 ・{' '}
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={onGoSettings}
+                >
+                  通知設定で追加
+                </button>
+              </span>
+            ) : (
+              <span>
+                確認リマインド <strong>{matched.length} 件</strong> 有効 ・{' '}
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={onGoSettings}
+                >
+                  通知設定で変更
+                </button>
+              </span>
+            )}
+          </div>
+        )
+      })()}
 
       {/* 期間モード切替バー */}
       <div className="dashboard-period-bar">

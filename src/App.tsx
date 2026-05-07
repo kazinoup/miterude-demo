@@ -18,6 +18,8 @@ import type {
   AlertSettings,
   DashboardCheckin,
   DashboardCheckinStore,
+  DashboardReminder,
+  DashboardReminderStore,
   DashboardDefaultPeriod,
   DashboardStore,
   DeviceStore,
@@ -27,6 +29,8 @@ import type {
   NotificationGroup,
   NotificationGroupStore,
   ReportKind,
+  ReportSchedule,
+  ReportScheduleStore,
   SavedFilter,
   SavedFilterStore,
   SensorCategory,
@@ -160,6 +164,12 @@ export default function App() {
   const [alertLogs, setAlertLogs] = useState<AlertLogStore>(
     initial?.alertLogs ?? {},
   )
+  // Phase G: 通知設定
+  const [reportSchedules, setReportSchedules] = useState<ReportScheduleStore>(
+    initial?.reportSchedules ?? {},
+  )
+  const [dashboardReminders, setDashboardReminders] =
+    useState<DashboardReminderStore>(initial?.dashboardReminders ?? {})
 
   const [view, setView] = useState<ViewKey>('dashboard')
   const [activeSensorId, setActiveSensorId] = useState<string | null>(null)
@@ -287,6 +297,8 @@ export default function App() {
       thresholdTemplates,
       savedFilters,
       alertLogs,
+      reportSchedules,
+      dashboardReminders,
     })
   }, [
     devices,
@@ -303,6 +315,8 @@ export default function App() {
     thresholdTemplates,
     savedFilters,
     alertLogs,
+    reportSchedules,
+    dashboardReminders,
   ])
 
   const sensorIds = useMemo(() => Object.keys(sensors).sort(), [sensors])
@@ -636,6 +650,49 @@ export default function App() {
     toast(`閾値テンプレート「${t?.name ?? id}」を削除しました`, 'info')
   }
 
+  /* Phase G: レポート定期配信 / ダッシュボード確認リマインド */
+  function handleUpsertReportSchedule(s: ReportSchedule) {
+    const isNew = !reportSchedules[s.id]
+    setReportSchedules((prev) => ({ ...prev, [s.id]: s }))
+    toast(
+      isNew
+        ? `定期配信「${s.name}」を作成しました`
+        : `定期配信「${s.name}」を更新しました`,
+      'success',
+    )
+  }
+
+  function handleDeleteReportSchedule(id: string) {
+    const s = reportSchedules[id]
+    setReportSchedules((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    toast(`定期配信「${s?.name ?? id}」を削除しました`, 'info')
+  }
+
+  function handleUpsertDashboardReminder(r: DashboardReminder) {
+    const isNew = !dashboardReminders[r.id]
+    setDashboardReminders((prev) => ({ ...prev, [r.id]: r }))
+    toast(
+      isNew
+        ? `リマインド「${r.name}」を作成しました`
+        : `リマインド「${r.name}」を更新しました`,
+      'success',
+    )
+  }
+
+  function handleDeleteDashboardReminder(id: string) {
+    const r = dashboardReminders[id]
+    setDashboardReminders((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    toast(`リマインド「${r?.name ?? id}」を削除しました`, 'info')
+  }
+
   /** 複数センサーへ閾値を一括適用（種別が一致するものだけ更新、他はスキップ） */
   function handleApplyBulkThresholds(
     ids: string[],
@@ -948,6 +1005,7 @@ export default function App() {
               onCreateCheckin={handleCreateCheckin}
               onGoRecords={() => navigate('records')}
               onGoSettings={() => navigate('settings')}
+              dashboardReminders={dashboardReminders}
             />
           )}
 
@@ -1037,6 +1095,13 @@ export default function App() {
               onDeleteThresholdTemplate={handleDeleteThresholdTemplate}
               devices={devices}
               onDevicesChange={handleDevicesChange}
+              reportSchedules={reportSchedules}
+              onUpsertReportSchedule={handleUpsertReportSchedule}
+              onDeleteReportSchedule={handleDeleteReportSchedule}
+              dashboardReminders={dashboardReminders}
+              dashboards={dashboards}
+              onUpsertDashboardReminder={handleUpsertDashboardReminder}
+              onDeleteDashboardReminder={handleDeleteDashboardReminder}
             />
           )}
 
@@ -1082,6 +1147,8 @@ export default function App() {
               onIncludeRecordsPage={setReportIncludeRecords}
               checkins={checkins}
               sensorNotes={sensorNotes}
+              reportSchedules={reportSchedules}
+              onGoSettings={() => navigate('settings')}
               onPrint={startBulkPrint}
               onBack={() => navigate('dashboard')}
             />

@@ -5,6 +5,7 @@ import {
   ChevronRight,
   CheckSquare,
   ClipboardCheck,
+  FileBarChart2,
   Printer,
   CalendarDays,
   Settings2,
@@ -13,6 +14,7 @@ import type {
   DashboardCheckinStore,
   DeviceStore,
   ReportKind,
+  ReportScheduleStore,
   SavedFilterStore,
   SensorCategoryStore,
   SensorGroupStore,
@@ -60,6 +62,10 @@ type Props = {
   /** Phase A-4: プレビュー描画用に記録履歴・運用メモを参照する */
   checkins: DashboardCheckinStore
   sensorNotes: SensorNoteStore
+
+  /** Phase G: 定期配信バナー用 */
+  reportSchedules: ReportScheduleStore
+  onGoSettings: () => void
 
   onPrint: () => void
   onBack: () => void
@@ -156,6 +162,8 @@ export function ReportView({
   onIncludeRecordsPage,
   checkins,
   sensorNotes,
+  reportSchedules,
+  onGoSettings,
   onPrint,
   onBack,
 }: Props) {
@@ -230,6 +238,42 @@ export function ReportView({
           </p>
         </div>
       </header>
+
+      {/* Phase G: 定期配信設定の有無を 1 行で示す */}
+      {(() => {
+        const matched = Object.values(reportSchedules).filter(
+          (s) => s.enabled && s.reportKind === printKind,
+        )
+        const kindLabel = printKind === 'monthly' ? '月報' : '週報'
+        return (
+          <div className="reminder-banner">
+            <FileBarChart2 size={14} className="reminder-banner-icon" />
+            {matched.length === 0 ? (
+              <span>
+                {kindLabel}の定期配信は未設定 ・{' '}
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={onGoSettings}
+                >
+                  通知設定で追加
+                </button>
+              </span>
+            ) : (
+              <span>
+                {kindLabel}の定期配信 <strong>{matched.length} 件</strong> 有効 ・{' '}
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={onGoSettings}
+                >
+                  通知設定で変更
+                </button>
+              </span>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Phase A-1: 出力タイプ + 対象期間 を 1 行に並べる
        *  左: [週報] [月報] のセグメントトグル

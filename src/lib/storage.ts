@@ -7,11 +7,13 @@
 import type {
   AlertLogStore,
   DashboardCheckinStore,
+  DashboardReminderStore,
   DashboardStore,
   DeviceStore,
   GatewayStore,
   ManufacturerIntegrationStore,
   NotificationGroupStore,
+  ReportScheduleStore,
   SavedFilterStore,
   SensorCategoryStore,
   SensorGroupStore,
@@ -133,6 +135,10 @@ export type PersistedState = {
   thresholdTemplates?: ThresholdTemplateStore
   /** Phase B / Phase 10: アラートログ（蓄積） */
   alertLogs?: AlertLogStore
+  /** Phase G: レポート定期配信 */
+  reportSchedules?: ReportScheduleStore
+  /** Phase G: ダッシュボード確認リマインド */
+  dashboardReminders?: DashboardReminderStore
 }
 
 const DATE_MARKER = '__d'
@@ -467,6 +473,33 @@ export function loadState(): PersistedState | null {
       for (const id of Object.keys(parsed.alertLogs)) {
         const e = parsed.alertLogs[id]
         if (e) e.occurredAt = ensureDate(e.occurredAt)
+      }
+    }
+
+    // Phase G: レポート定期配信 / ダッシュボード確認リマインドの補完
+    if (!parsed.reportSchedules || typeof parsed.reportSchedules !== 'object') {
+      parsed.reportSchedules = {}
+    } else {
+      for (const id of Object.keys(parsed.reportSchedules)) {
+        const r = parsed.reportSchedules[id]
+        if (r) {
+          r.createdAt = ensureDate(r.createdAt)
+          r.updatedAt = ensureDate(r.updatedAt)
+        }
+      }
+    }
+    if (
+      !parsed.dashboardReminders ||
+      typeof parsed.dashboardReminders !== 'object'
+    ) {
+      parsed.dashboardReminders = {}
+    } else {
+      for (const id of Object.keys(parsed.dashboardReminders)) {
+        const d = parsed.dashboardReminders[id]
+        if (d) {
+          d.createdAt = ensureDate(d.createdAt)
+          d.updatedAt = ensureDate(d.updatedAt)
+        }
       }
     }
 

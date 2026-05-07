@@ -613,6 +613,77 @@
   opacity: 0.5;
 }
 
+/* Phase G: ダッシュボード / レポート上部に出すリマインド・定期配信のバナー */
+.reminder-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+  padding: 0.45rem 0.75rem;
+  background: rgba(15, 39, 68, 0.04);
+  border: 1px solid var(--gray-200);
+  border-left: 3px solid var(--navy-700);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: var(--gray-700);
+}
+
+.reminder-banner-icon {
+  color: var(--navy-700);
+  flex-shrink: 0;
+}
+
+.reminder-banner strong {
+  color: var(--navy-800);
+}
+
+.reminder-banner .link-btn {
+  color: var(--navy-700);
+  font-weight: 600;
+}
+
+/* Phase G: 通知設定ダイアログ内のヘルパ */
+.schedule-time-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.schedule-time-row .inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.schedule-time-row .select {
+  padding: 0.25rem 0.45rem;
+  font-family: inherit;
+}
+
+.schedule-target-list {
+  max-height: 11rem;
+  overflow-y: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  background: #fff;
+  padding: 0.45rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.small-hint {
+  margin-top: 0.3rem;
+  font-size: 0.76rem;
+}
+
+.inline-icon-muted {
+  color: var(--gray-500);
+  margin-left: 0.2rem;
+}
+
 .empty-spec code {
   background: var(--gray-100);
   border: 1px solid var(--gray-200);

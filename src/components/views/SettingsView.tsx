@@ -15,16 +15,23 @@ import {
   Webhook,
   Sliders,
   FileText,
+  FileBarChart2,
+  ClipboardCheck,
   CheckCircle2,
   Clock,
   Boxes,
 } from 'lucide-react'
 import type {
+  DashboardReminder,
+  DashboardReminderStore,
+  DashboardStore,
   DeviceStore,
   ManufacturerIntegration,
   ManufacturerIntegrationStore,
   NotificationGroup,
   NotificationGroupStore,
+  ReportSchedule,
+  ReportScheduleStore,
   SensorStore,
   ThresholdTemplate,
   ThresholdTemplateStore,
@@ -39,6 +46,8 @@ import { CsvImportButton } from '../CsvImportButton'
 import { NotificationGroupEditDialog } from '../NotificationGroupEditDialog'
 import { ManufacturerIntegrationDialog } from '../ManufacturerIntegrationDialog'
 import { ThresholdTemplateEditDialog } from '../ThresholdTemplateEditDialog'
+import { ReportScheduleEditDialog } from '../ReportScheduleEditDialog'
+import { DashboardReminderEditDialog } from '../DashboardReminderEditDialog'
 
 type Props = {
   notificationGroups: NotificationGroupStore
@@ -53,13 +62,22 @@ type Props = {
   /** Phase E-3: 連携設定リストの各メーカー行から CSV を直接取り込めるようにする */
   devices: DeviceStore
   onDevicesChange: (next: DeviceStore) => void
+  /** Phase G: レポート定期配信 */
+  reportSchedules: ReportScheduleStore
+  onUpsertReportSchedule: (s: ReportSchedule) => void
+  onDeleteReportSchedule: (id: string) => void
+  /** Phase G: ダッシュボード確認リマインド */
+  dashboardReminders: DashboardReminderStore
+  dashboards: DashboardStore
+  onUpsertDashboardReminder: (r: DashboardReminder) => void
+  onDeleteDashboardReminder: (id: string) => void
 }
 
 type Tab = 'integrations' | 'notifications' | 'thresholds' | 'devices'
 
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
   { key: 'integrations', label: '連携設定', icon: Plug },
-  { key: 'notifications', label: '通知グループ', icon: Bell },
+  { key: 'notifications', label: '通知設定', icon: Bell },
   { key: 'thresholds', label: '閾値テンプレート', icon: Sliders },
   { key: 'devices', label: '対応デバイス', icon: Boxes },
 ]
@@ -70,6 +88,27 @@ function countByGroup(sensors: SensorStore, groupId: string): number {
     if (s.notificationGroupId === groupId) n++
   }
   return n
+}
+
+const WEEKDAYS_JP = ['日', '月', '火', '水', '木', '金', '土'] as const
+
+/** Phase G: レポート定期配信のサマリ（"毎週月曜 9:00 / 週報" など） */
+function summarizeReportSchedule(s: ReportSchedule): string {
+  const kind = s.reportKind === 'weekly' ? '週報' : '月報'
+  if (s.reportKind === 'weekly') {
+    const wd = WEEKDAYS_JP[s.weeklyDayOfWeek ?? 1]
+    return `毎週${wd}曜 ${s.deliveryTime} ・ ${kind}`
+  }
+  return `毎月 ${s.monthlyDayOfMonth ?? 1} 日 ${s.deliveryTime} ・ ${kind}`
+}
+
+/** Phase G: ダッシュボード確認リマインドのサマリ */
+function summarizeReminder(r: DashboardReminder): string {
+  if (r.frequency === 'weekly') {
+    const wd = WEEKDAYS_JP[r.weeklyDayOfWeek ?? 1]
+    return `毎週${wd}曜 ${r.deadlineTime} までに未確認なら通知`
+  }
+  return `毎日 ${r.deadlineTime} までに未確認なら通知`
 }
 
 /** テンプレ内容のかんたんなサマリ表示（例: "温度 0〜10℃ / 湿度 40〜85%"） */
@@ -166,6 +205,13 @@ export function SettingsView({
   onDeleteThresholdTemplate,
   devices,
   onDevicesChange,
+  reportSchedules,
+  onUpsertReportSchedule,
+  onDeleteReportSchedule,
+  dashboardReminders,
+  dashboards,
+  onUpsertDashboardReminder,
+  onDeleteDashboardReminder,
 }: Props) {
   const [tab, setTab] = useState<Tab>('integrations')
   const [thresholdEditDialog, setThresholdEditDialog] = useState<{
@@ -181,6 +227,18 @@ export function SettingsView({
   const [integrationDialog, setIntegrationDialog] = useState<{
     open: boolean
     initial: ManufacturerIntegration | null
+  }>({ open: false, initial: null })
+
+  /** Phase G: レポート定期配信ダイアログ */
+  const [reportScheduleDialog, setReportScheduleDialog] = useState<{
+    open: boolean
+    initial: ReportSchedule | null
+  }>({ open: false, initial: null })
+
+  /** Phase G: ダッシュボード確認リマインドダイアログ */
+  const [reminderDialog, setReminderDialog] = useState<{
+    open: boolean
+    initial: DashboardReminder | null
   }>({ open: false, initial: null })
 
   const groupList = useMemo(
@@ -338,6 +396,7 @@ export function SettingsView({
       )}
 
       {tab === 'notifications' && (
+        <>
         <section className="panel-card">
           <div className="panel-card-head">
             <h2>
@@ -435,6 +494,232 @@ export function SettingsView({
             </ul>
           )}
         </section>
+
+        {/* Phase G: レポート定期配信 */}
+        <section className="panel-card">
+          <div className="panel-card-head">
+            <h2>
+              <FileBarChart2 size={16} className="head-icon" />
+              レポート定期配信
+            </h2>
+            <div className="panel-card-meta">
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() =>
+                  setReportScheduleDialog({ open: true, initial: null })
+                }
+              >
+                <Plus size={14} />
+                <span>新規作成</span>
+              </button>
+            </div>
+          </div>
+          <p className="muted in-panel multiline-help">
+            <span>
+              週報・月報を自動で配信します。配信タイミングを過ぎると、対象期間のレポート閲覧用リンクをメールでお送りします。
+            </span>
+            <span>
+              ファイル添付には現状未対応のため、リンクからログインしてご確認ください。
+            </span>
+          </p>
+          {Object.keys(reportSchedules).length === 0 ? (
+            <p className="muted in-panel">定期配信がまだありません。</p>
+          ) : (
+            <ul className="template-list">
+              {Object.values(reportSchedules)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((s) => {
+                  const ng = s.notificationGroupId
+                    ? notificationGroups[s.notificationGroupId]
+                    : null
+                  return (
+                    <li key={s.id} className="template-list-item">
+                      <div className="template-list-main">
+                        <div className="template-list-name-row">
+                          <button
+                            type="button"
+                            className="template-list-name-btn"
+                            onClick={() =>
+                              setReportScheduleDialog({
+                                open: true,
+                                initial: s,
+                              })
+                            }
+                            title="編集"
+                          >
+                            <FileBarChart2 size={13} />
+                            <strong className="template-list-name">
+                              {s.name}
+                            </strong>
+                          </button>
+                          <span
+                            className={`badge ${s.enabled ? 'badge-online' : 'badge-offline'}`}
+                          >
+                            {s.enabled ? '有効' : '停止中'}
+                          </span>
+                        </div>
+                        <span className="template-list-summary">
+                          {summarizeReportSchedule(s)}
+                          {' ・ 対象: '}
+                          {s.targetSensorIds.length === 0
+                            ? '全センサー'
+                            : `${s.targetSensorIds.length} 台`}
+                          {' ・ 配信先: '}
+                          {ng ? ng.name : <span className="muted">未設定</span>}
+                        </span>
+                      </div>
+                      <div className="template-list-actions">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label="編集"
+                          onClick={() =>
+                            setReportScheduleDialog({
+                              open: true,
+                              initial: s,
+                            })
+                          }
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn icon-btn-danger"
+                          aria-label="削除"
+                          onClick={() => {
+                            if (
+                              confirm(
+                                `定期配信「${s.name}」を削除しますか？`,
+                              )
+                            ) {
+                              onDeleteReportSchedule(s.id)
+                            }
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
+            </ul>
+          )}
+        </section>
+
+        {/* Phase G: ダッシュボード確認リマインド */}
+        <section className="panel-card">
+          <div className="panel-card-head">
+            <h2>
+              <ClipboardCheck size={16} className="head-icon" />
+              ダッシュボード確認リマインド
+            </h2>
+            <div className="panel-card-meta">
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() =>
+                  setReminderDialog({ open: true, initial: null })
+                }
+              >
+                <Plus size={14} />
+                <span>新規作成</span>
+              </button>
+            </div>
+          </div>
+          <p className="muted in-panel multiline-help">
+            <span>
+              指定の頻度・時刻までにダッシュボード確認の記録が無い場合に通知を送ります。
+            </span>
+            <span>
+              ダッシュボードを「全ダッシュボード」にすると、いずれかで確認があれば通知をスキップします。
+            </span>
+          </p>
+          {Object.keys(dashboardReminders).length === 0 ? (
+            <p className="muted in-panel">確認リマインドがまだありません。</p>
+          ) : (
+            <ul className="template-list">
+              {Object.values(dashboardReminders)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((r) => {
+                  const ng = r.notificationGroupId
+                    ? notificationGroups[r.notificationGroupId]
+                    : null
+                  const targetDash = r.dashboardId
+                    ? dashboards[r.dashboardId]
+                    : null
+                  return (
+                    <li key={r.id} className="template-list-item">
+                      <div className="template-list-main">
+                        <div className="template-list-name-row">
+                          <button
+                            type="button"
+                            className="template-list-name-btn"
+                            onClick={() =>
+                              setReminderDialog({
+                                open: true,
+                                initial: r,
+                              })
+                            }
+                            title="編集"
+                          >
+                            <ClipboardCheck size={13} />
+                            <strong className="template-list-name">
+                              {r.name}
+                            </strong>
+                          </button>
+                          <span
+                            className={`badge ${r.enabled ? 'badge-online' : 'badge-offline'}`}
+                          >
+                            {r.enabled ? '有効' : '停止中'}
+                          </span>
+                        </div>
+                        <span className="template-list-summary">
+                          {summarizeReminder(r)}
+                          {' ・ 対象: '}
+                          {targetDash ? targetDash.name : '全ダッシュボード'}
+                          {' ・ 配信先: '}
+                          {ng ? ng.name : <span className="muted">未設定</span>}
+                        </span>
+                      </div>
+                      <div className="template-list-actions">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label="編集"
+                          onClick={() =>
+                            setReminderDialog({
+                              open: true,
+                              initial: r,
+                            })
+                          }
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn icon-btn-danger"
+                          aria-label="削除"
+                          onClick={() => {
+                            if (
+                              confirm(
+                                `リマインド「${r.name}」を削除しますか？`,
+                              )
+                            ) {
+                              onDeleteDashboardReminder(r.id)
+                            }
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
+            </ul>
+          )}
+        </section>
+        </>
       )}
 
       {tab === 'thresholds' && (
@@ -619,6 +904,47 @@ export function SettingsView({
           onUpsertThresholdTemplate(t)
           setThresholdEditDialog({ open: false, initial: null })
         }}
+      />
+
+      {/* Phase G */}
+      <ReportScheduleEditDialog
+        open={reportScheduleDialog.open}
+        initial={reportScheduleDialog.initial}
+        notificationGroups={notificationGroups}
+        sensors={sensors}
+        onClose={() => setReportScheduleDialog({ open: false, initial: null })}
+        onSubmit={(s) => {
+          onUpsertReportSchedule(s)
+          setReportScheduleDialog({ open: false, initial: null })
+        }}
+        onDelete={
+          reportScheduleDialog.initial
+            ? (id) => {
+                onDeleteReportSchedule(id)
+                setReportScheduleDialog({ open: false, initial: null })
+              }
+            : undefined
+        }
+      />
+
+      <DashboardReminderEditDialog
+        open={reminderDialog.open}
+        initial={reminderDialog.initial}
+        notificationGroups={notificationGroups}
+        dashboards={dashboards}
+        onClose={() => setReminderDialog({ open: false, initial: null })}
+        onSubmit={(r) => {
+          onUpsertDashboardReminder(r)
+          setReminderDialog({ open: false, initial: null })
+        }}
+        onDelete={
+          reminderDialog.initial
+            ? (id) => {
+                onDeleteDashboardReminder(id)
+                setReminderDialog({ open: false, initial: null })
+              }
+            : undefined
+        }
       />
     </div>
   )
