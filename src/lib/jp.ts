@@ -29,6 +29,26 @@ export function formatHumRange(min: number, max: number): string {
   return `${min.toFixed(1)}% ～ ${max.toFixed(1)}%`
 }
 
+/** 上下限が片方だけのケースに対応した範囲表記
+ *  - 両方ある: "0.0 〜 10.0℃"
+ *  - 下限のみ: "0.0℃ 以上"
+ *  - 上限のみ: "10.0℃ 以下"
+ *  - どちらもなし: "—"
+ */
+export function formatThresholdRange(
+  min: number | undefined,
+  max: number | undefined,
+  unit: string,
+  decimals = 1,
+): string {
+  if (min != null && max != null) {
+    return `${min.toFixed(decimals)} 〜 ${max.toFixed(decimals)}${unit}`
+  }
+  if (min != null) return `${min.toFixed(decimals)}${unit} 以上`
+  if (max != null) return `${max.toFixed(decimals)}${unit} 以下`
+  return '—'
+}
+
 /** 相対時間表示（最終更新からの経過時間）
  *  - 1分未満: "now"
  *  - 1時間未満: "30min"

@@ -1,16 +1,16 @@
 import { Fragment } from 'react'
-import type { MissingDisplay, ReportThresholds, StorageKind, YearMonth } from '../types'
+import type { MissingDisplay, SensorThresholds, YearMonth } from '../types'
 import {
-  activeTempRange,
   buildMonthlyGrid,
   cellIsDeviation,
   daysInMonth,
   formatCellValue,
+  getThresholdForMetric,
   isMetricDeviationEnabled,
   summarizeMetric,
 } from '../lib/report'
 import type { SensorReading } from '../types'
-import { formatHumRange, formatPeriodLongJp, formatTempRange, weekdayJp } from '../lib/jp'
+import { formatPeriodLongJp, formatThresholdRange, weekdayJp } from '../lib/jp'
 import { ReportHeroLine } from './ReportHeroLine'
 
 type Metric = 'temperature' | 'humidity'
@@ -21,8 +21,7 @@ type Props = {
   deviceId: string
   ym: YearMonth
   readings: SensorReading[]
-  thresholds: ReportThresholds
-  storageKind: StorageKind
+  thresholds: SensorThresholds | undefined
   missingDisplay: MissingDisplay
 }
 
@@ -33,15 +32,14 @@ export function MonthlyTableReport({
   ym,
   readings,
   thresholds,
-  storageKind,
   missingDisplay,
 }: Props) {
   const dim = daysInMonth(ym.year, ym.month)
   const grid = buildMonthlyGrid(readings, ym, metric)
-  const summary = summarizeMetric(readings, ym, metric, thresholds, storageKind)
+  const summary = summarizeMetric(readings, ym, metric, thresholds)
   const decimals = metric === 'temperature' ? 1 : 1
-  const tempR = activeTempRange(storageKind, thresholds)
-  const showDeviationStats = isMetricDeviationEnabled(metric, thresholds, storageKind)
+  const showDeviationStats = isMetricDeviationEnabled(thresholds, metric)
+  const m = getThresholdForMetric(thresholds, metric)
 
   return (
     <div className="report-page monthly-page report-numeric">
@@ -75,13 +73,15 @@ export function MonthlyTableReport({
             <td>{metric === 'temperature' ? '温度' : '湿度'}</td>
             <th>計測回数</th>
             <td>{summary.count}</td>
-            {showDeviationStats ? (
+            {showDeviationStats && m ? (
               <>
                 <th>基準</th>
                 <td>
-                  {metric === 'temperature'
-                    ? formatTempRange(tempR.min, tempR.max)
-                    : formatHumRange(thresholds.humMin, thresholds.humMax)}
+                  {formatThresholdRange(
+                    m.alert.min,
+                    m.alert.max,
+                    metric === 'temperature' ? '℃' : '%',
+                  )}
                 </td>
                 <th>逸脱回数</th>
                 <td className={summary.deviationCount > 0 ? 'deviation' : ''}>
@@ -146,7 +146,7 @@ export function MonthlyTableReport({
                     </th>
                     {Array.from({ length: dim }, (_, col) => {
                       const v = grid[rowA]?.[col] ?? null
-                      const dev = cellIsDeviation(v, metric, thresholds, storageKind)
+                      const dev = cellIsDeviation(v, metric, thresholds)
                       const text = formatCellValue(v, missingDisplay, decimals)
                       return (
                         <td key={col} className={dev ? 'cell-deviation' : ''}>
@@ -158,7 +158,7 @@ export function MonthlyTableReport({
                   <tr className="monthly-hour-row monthly-hour-row-sub">
                     {Array.from({ length: dim }, (_, col) => {
                       const v = grid[rowB]?.[col] ?? null
-                      const dev = cellIsDeviation(v, metric, thresholds, storageKind)
+                      const dev = cellIsDeviation(v, metric, thresholds)
                       const text = formatCellValue(v, missingDisplay, decimals)
                       return (
                         <td key={col} className={dev ? 'cell-deviation' : ''}>

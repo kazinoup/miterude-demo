@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Thermometer,
   Droplets,
+  Download,
   FileBarChart2,
   Wifi,
   WifiOff,
@@ -14,14 +15,19 @@ import {
   BatteryMedium,
   BatteryLow,
   BatteryWarning,
+  Info,
   Router as RouterIcon,
   CalendarDays,
   Rows3,
   LineChart as LineChartIcon,
   Pencil,
   Plus,
+  RefreshCw,
+  RotateCcw,
   Trash2,
+  Wrench,
   ShieldCheck,
+  Sliders,
 } from 'lucide-react'
 import {
   CartesianGrid,
@@ -38,14 +44,14 @@ import type {
   DeviceStore,
   GatewayStore,
   NotificationGroupStore,
-  ReportThresholds,
   Sensor,
   SensorCategoryStore,
   SensorGroupStore,
   SensorNote,
   SensorNoteStore,
   SensorStore,
-  StorageKind,
+  SensorThresholds,
+  TempHumidityThresholds,
   UserSession,
   YearMonth,
 } from '../../types'
@@ -53,11 +59,9 @@ import { SENSOR_NOTE_CATEGORY_LABELS } from '../../types'
 import { normalizeTag } from '../../lib/groups'
 import { CATEGORY_ICON_COMPONENTS } from '../../lib/categories'
 import {
-  activeTempRange,
   cellIsDeviation,
-  inferStorageKindForRange,
+  getThresholdForMetric,
   isMetricDeviationEnabled,
-  storageKindLabelJp,
   summarizeRange,
 } from '../../lib/report'
 import {
@@ -73,15 +77,16 @@ import {
 import { KpiCard } from '../KpiCard'
 import { SensorAlertSettings } from '../SensorAlertSettings'
 import { SensorNoteDialog } from '../SensorNoteDialog'
+import { SensorThresholdSettings } from '../SensorThresholdSettings'
 import { notesForSensor } from '../../lib/records'
-import { formatRelativeAgo } from '../../lib/jp'
+import { toast } from '../../lib/toast'
+import { formatRelativeAgo, formatThresholdRange } from '../../lib/jp'
 
 type Props = {
   deviceId: string
   devices: DeviceStore
   sensors: SensorStore
   gateways: GatewayStore
-  thresholds: ReportThresholds
   notificationGroups: NotificationGroupStore
   sensorNotes: SensorNoteStore
   session: UserSession
@@ -98,6 +103,17 @@ type Props = {
   onUpdateSensorTags: (sensorId: string, tags: string[]) => void
   onUpdateSensorGroup: (sensorId: string, groupId: string | null) => void
   onUpdateSensorCategory: (sensorId: string, categoryId: string | null) => void
+  onUpdateSensorThresholds: (
+    sensorId: string,
+    thresholds: SensorThresholds | undefined,
+  ) => void
+  onUpdateSensorInfo: (
+    sensorId: string,
+    patch: Partial<Pick<
+      Sensor,
+      'name' | 'deviceNumber' | 'serialNumber' | 'model' | 'manufacturer' | 'gatewayId'
+    >>,
+  ) => void
 }
 
 function fmtDate(d: Date): string {
@@ -135,25 +151,77 @@ function batteryIcon(pct: number) {
   return BatteryFull
 }
 
-function StorageLabel({ kind }: { kind: StorageKind }) {
-  return <span className="storage-label">{storageKindLabelJp(kind)}</span>
+// 区分（StorageKind）ベースのラベルは Phase 9.11 で廃止。
+// ユーザー定義のカテゴリ（CategoryBadge）に置き換わっている。
+
+/* ---------- タブ ---------- */
+type DetailTab = 'basic' | 'history' | 'maintenance'
+
+const TAB_DEFS: { key: DetailTab; label: string; icon: React.ReactNode }[] = [
+  { key: 'basic', label: '基本情報', icon: <Info size={14} /> },
+  { key: 'history', label: '履歴', icon: <CalendarDays size={14} /> },
+  { key: 'maintenance', label: 'メンテナンス・運用メモ', icon: <Wrench size={14} /> },
+]
+
+/* ---------- CSV エクスポート ---------- */
+/** 履歴データを CSV 文字列に変換する。Excel が日本語を正しく読めるよう BOM を付与。 */
+function buildHistoryCsv(
+  deviceId: string,
+  readings: { measuredAt: Date; temperature: number; humidity: number; battery?: number }[],
+  thresholds: SensorThresholds | undefined,
+): string {
+  const header = [
+    '計測日時',
+    '温度(℃)',
+    '湿度(%)',
+    'バッテリー(%)',
+    '温度判定',
+    '湿度判定',
+  ].join(',')
+  const tempT = getThresholdForMetric(thresholds, 'temperature')
+  const humT = getThresholdForMetric(thresholds, 'humidity')
+
+  function classify(v: number, m: typeof tempT): string {
+    if (!m) return ''
+    const alertActive = m.alert.enabled && (m.alert.min != null || m.alert.max != null)
+    const warnActive = m.warn.enabled && (m.warn.min != null || m.warn.max != null)
+    if (!alertActive && !warnActive) return ''
+    if (alertActive) {
+      if (m.alert.min != null && v < m.alert.min) return '危険'
+      if (m.alert.max != null && v > m.alert.max) return '危険'
+    }
+    if (warnActive) {
+      if (m.warn.min != null && v < m.warn.min) return '注意'
+      if (m.warn.max != null && v > m.warn.max) return '注意'
+    }
+    return '正常'
+  }
+
+  const rows = readings.map((r) => {
+    const ts = r.measuredAt.toLocaleString('sv-SE').replace('T', ' ')
+    const t = r.temperature.toFixed(1)
+    const h = r.humidity.toFixed(1)
+    const b = r.battery != null ? r.battery.toFixed(0) : ''
+    const tJ = classify(r.temperature, tempT)
+    const hJ = classify(r.humidity, humT)
+    return [ts, t, h, b, tJ, hJ].join(',')
+  })
+
+  // ﻿ (BOM) を付与して Excel で文字化けしないように
+  return '﻿' + [`# ${deviceId}`, header, ...rows].join('\n')
 }
 
-function MetaItem({
-  label,
-  value,
-  mono,
-}: {
-  label: string
-  value: React.ReactNode
-  mono?: boolean
-}) {
-  return (
-    <div className="meta-item">
-      <span className="meta-item-label">{label}</span>
-      <span className={`meta-item-value ${mono ? 'mono' : ''}`}>{value}</span>
-    </div>
-  )
+/** Blob を生成してブラウザにダウンロードさせる */
+function downloadCsv(filename: string, csvContent: string): void {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 export function SensorDetailView({
@@ -161,7 +229,6 @@ export function SensorDetailView({
   devices,
   sensors,
   gateways,
-  thresholds,
   notificationGroups,
   sensorNotes,
   session,
@@ -178,7 +245,10 @@ export function SensorDetailView({
   onUpdateSensorTags,
   onUpdateSensorGroup,
   onUpdateSensorCategory,
+  onUpdateSensorThresholds,
+  onUpdateSensorInfo,
 }: Props) {
+  const [activeTab, setActiveTab] = useState<DetailTab>('basic')
   const [noteDialogOpen, setNoteDialogOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const sensorNoteList = useMemo(
@@ -210,18 +280,16 @@ export function SensorDetailView({
     [readings, range],
   )
 
-  const storageKind = useMemo(
-    () => inferStorageKindForRange(readings, range),
-    [readings, range],
-  )
+  // Phase 9.11: 閾値はセンサー個別に持つようになった
+  const sensorThresholds: SensorThresholds | undefined = sensor?.thresholds
 
   const tempSum = useMemo(
-    () => summarizeRange(readings, range, 'temperature', thresholds, storageKind),
-    [readings, range, thresholds, storageKind],
+    () => summarizeRange(readings, range, 'temperature', sensorThresholds),
+    [readings, range, sensorThresholds],
   )
   const humSum = useMemo(
-    () => summarizeRange(readings, range, 'humidity', thresholds, storageKind),
-    [readings, range, thresholds, storageKind],
+    () => summarizeRange(readings, range, 'humidity', sensorThresholds),
+    [readings, range, sensorThresholds],
   )
 
   const chartData = useMemo(
@@ -234,9 +302,10 @@ export function SensorDetailView({
     [periodReadings],
   )
 
-  const tempRange = activeTempRange(storageKind, thresholds)
-  const useT = isMetricDeviationEnabled('temperature', thresholds, storageKind)
-  const useH = isMetricDeviationEnabled('humidity', thresholds, storageKind)
+  const tempT = getThresholdForMetric(sensorThresholds, 'temperature')
+  const humT = getThresholdForMetric(sensorThresholds, 'humidity')
+  const useT = isMetricDeviationEnabled(sensorThresholds, 'temperature')
+  const useH = isMetricDeviationEnabled(sensorThresholds, 'humidity')
 
   const allDeviceIds = useMemo(() => Object.keys(sensors).sort(), [sensors])
   const deviceIndex = allDeviceIds.indexOf(deviceId)
@@ -285,19 +354,16 @@ export function SensorDetailView({
           <span>センサー一覧</span>
         </button>
         <ChevronRight size={14} className="bc-sep" />
-        <span className="bc-current">{deviceId}</span>
+        <span className="bc-current">{sensor?.name || deviceId}</span>
       </div>
 
       <header className="view-header">
         <div className="view-header-text">
           <h1 className="device-title">
-            <span className="device-title-id">{deviceId}</span>
+            <span className="device-title-id">{sensor?.name || deviceId}</span>
             {sensor && <span className="device-devnum">{sensor.deviceNumber}</span>}
           </h1>
-          <p>
-            <StorageLabel kind={storageKind} /> ・{' '}
-            {readings.length.toLocaleString('ja-JP')} 件
-          </p>
+          <p>{readings.length.toLocaleString('ja-JP')} 件の計測データ</p>
         </div>
         <div className="view-header-actions">
           <div className="device-switcher">
@@ -317,7 +383,7 @@ export function SensorDetailView({
             >
               {allDeviceIds.map((id) => (
                 <option key={id} value={id}>
-                  {id}
+                  {sensors[id]?.name || id}
                 </option>
               ))}
             </select>
@@ -342,7 +408,24 @@ export function SensorDetailView({
         </div>
       </header>
 
-      {sensor && (
+      {/* タブ切り替え */}
+      <nav className="detail-tabs" role="tablist" aria-label="センサー詳細タブ">
+        {TAB_DEFS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === t.key}
+            className={`detail-tab ${activeTab === t.key ? 'is-active' : ''}`}
+            onClick={() => setActiveTab(t.key)}
+          >
+            <span className="detail-tab-icon">{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {activeTab === 'basic' && sensor && (
         <section className="panel-card sensor-meta-card">
           <div className="panel-card-head">
             <h2>センサー情報</h2>
@@ -370,37 +453,118 @@ export function SensorDetailView({
                 <BatteryIcon size={14} strokeWidth={2} />
                 <span>{sensor.battery}%</span>
               </span>
+              <span className="muted panel-card-meta-note">変更は自動保存</span>
             </div>
           </div>
-          <div className="meta-grid">
-            <MetaItem label="デバイス番号" value={sensor.deviceNumber} mono />
-            <MetaItem label="シリアル番号" value={sensor.serialNumber} mono />
-            <MetaItem label="モデル" value={sensor.model} />
-            <MetaItem label="メーカー" value={sensor.manufacturer} />
-            <MetaItem
-              label="接続ゲートウェイ"
-              value={
-                gateway ? (
+
+          {/* 2 行構成: 1 行目=識別 (名前・デバイス番号・シリアル番号)、
+             2 行目=機器情報 (モデル・メーカー・ゲートウェイ)。最終受信は読み取り専用で別行。 */}
+          <div className="meta-edit-grid">
+            <label className="meta-edit-field meta-edit-field-name">
+              <span className="meta-edit-label">センサー名</span>
+              <input
+                type="text"
+                className="form-input"
+                value={sensor.name ?? sensor.id}
+                onChange={(e) => {
+                  const v = e.target.value
+                  // 空欄や id と同じなら name を未設定に戻す
+                  const name =
+                    v.trim() === '' || v === sensor.id ? undefined : v
+                  onUpdateSensorInfo(deviceId, { name })
+                }}
+                placeholder={sensor.id}
+              />
+            </label>
+            <label className="meta-edit-field">
+              <span className="meta-edit-label">デバイス番号</span>
+              <input
+                type="text"
+                className="form-input cell-mono"
+                value={sensor.deviceNumber}
+                onChange={(e) =>
+                  onUpdateSensorInfo(deviceId, { deviceNumber: e.target.value })
+                }
+              />
+            </label>
+            <label className="meta-edit-field">
+              <span className="meta-edit-label">シリアル番号</span>
+              <input
+                type="text"
+                className="form-input cell-mono"
+                value={sensor.serialNumber}
+                onChange={(e) =>
+                  onUpdateSensorInfo(deviceId, { serialNumber: e.target.value })
+                }
+              />
+            </label>
+
+            <label className="meta-edit-field">
+              <span className="meta-edit-label">モデル</span>
+              <input
+                type="text"
+                className="form-input"
+                value={sensor.model}
+                onChange={(e) =>
+                  onUpdateSensorInfo(deviceId, { model: e.target.value })
+                }
+              />
+            </label>
+            <label className="meta-edit-field">
+              <span className="meta-edit-label">メーカー</span>
+              <input
+                type="text"
+                className="form-input"
+                value={sensor.manufacturer}
+                onChange={(e) =>
+                  onUpdateSensorInfo(deviceId, { manufacturer: e.target.value })
+                }
+              />
+            </label>
+            <div className="meta-edit-field">
+              <span className="meta-edit-label">接続ゲートウェイ</span>
+              <div className="meta-edit-gateway">
+                <select
+                  className="select"
+                  value={sensor.gatewayId}
+                  onChange={(e) =>
+                    onUpdateSensorInfo(deviceId, { gatewayId: e.target.value })
+                  }
+                >
+                  {Object.values(gateways)
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}（{g.id}）
+                      </option>
+                    ))}
+                </select>
+                {gateway && (
                   <button
                     type="button"
-                    className="link-btn meta-link-btn"
+                    className="link-btn meta-edit-gateway-link"
                     onClick={() => onOpenGateway(gateway.id)}
+                    title="このゲートウェイの詳細を開く"
                   >
                     <RouterIcon size={13} />
-                    <span>{gateway.name}</span>
-                    <span className="meta-sub-inline">（{gateway.id}）</span>
+                    <span>詳細</span>
                   </button>
-                ) : (
-                  <span className="muted">-</span>
-                )
-              }
-            />
-            <MetaItem label="最終受信" value={fmtDateTime(sensor.lastSeenAt)} mono />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 読み取り専用情報（システムが管理する値） */}
+          <div className="meta-readonly-row">
+            <span className="meta-readonly-label">最終受信</span>
+            <span className="meta-readonly-value mono">
+              {fmtDateTime(sensor.lastSeenAt)}
+            </span>
           </div>
         </section>
       )}
 
-      {sensor && (
+      {activeTab === 'basic' && sensor && (
         <section className="panel-card">
           <div className="panel-card-head">
             <h2>
@@ -411,7 +575,7 @@ export function SensorDetailView({
               グループ・タグはセンサー一覧の絞り込みやダッシュボード対象選択で使えます。
             </span>
           </div>
-          <div className="classify-row">
+          <div className="classify-row classify-row-3col">
             <label className="classify-field">
               <span className="classify-label">区分</span>
               <div className="classify-select-wrap">
@@ -518,31 +682,79 @@ export function SensorDetailView({
         </section>
       )}
 
+      {/* 基本情報タブ: 逸脱判定（センサー固有の閾値） */}
+      {activeTab === 'basic' && sensor && (
+        <section className="panel-card">
+          <div className="panel-card-head">
+            <h2>
+              <Sliders size={16} className="head-icon" />
+              逸脱判定（閾値）
+            </h2>
+            <span className="panel-card-meta muted">
+              このセンサー個別の上下限。レポートやダッシュボードの逸脱判定はこの値を基準に行われます。
+            </span>
+          </div>
+          <SensorThresholdSettings
+            sensor={sensor}
+            onChange={(next: TempHumidityThresholds | undefined) => {
+              onUpdateSensorThresholds(deviceId, next)
+            }}
+          />
+        </section>
+      )}
+
+      {activeTab === 'history' && (
       <section className="panel-card history-card">
         <div className="panel-card-head">
           <h2>
             <CalendarDays size={16} className="head-icon" />
             履歴
           </h2>
-          <div className="view-toggle" role="group" aria-label="表示モード">
+          <div className="panel-card-meta">
             <button
               type="button"
-              className={`view-toggle-btn ${viewMode === 'chart' ? 'is-active' : ''}`}
-              onClick={() => setViewMode('chart')}
-              aria-pressed={viewMode === 'chart'}
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                if (periodReadings.length === 0) {
+                  toast('この期間にダウンロードできるデータがありません', 'info')
+                  return
+                }
+                const periodTag =
+                  periodType === 'day'
+                    ? toDateInputValue(anchor)
+                    : periodType === 'week'
+                      ? `week-${toDateInputValue(anchor)}`
+                      : toMonthInputValue(anchor)
+                const filename = `${deviceId}_${periodTag}.csv`
+                const csv = buildHistoryCsv(deviceId, periodReadings, sensorThresholds)
+                downloadCsv(filename, csv)
+                toast(`${filename} をダウンロードしました`, 'success')
+              }}
+              title="表示中の期間の計測データを CSV でダウンロード"
             >
-              <LineChartIcon size={14} />
-              <span>グラフ</span>
+              <Download size={14} />
+              <span>CSV ダウンロード</span>
             </button>
-            <button
-              type="button"
-              className={`view-toggle-btn ${viewMode === 'list' ? 'is-active' : ''}`}
-              onClick={() => setViewMode('list')}
-              aria-pressed={viewMode === 'list'}
-            >
-              <Rows3 size={14} />
-              <span>一覧</span>
-            </button>
+            <div className="view-toggle" role="group" aria-label="表示モード">
+              <button
+                type="button"
+                className={`view-toggle-btn ${viewMode === 'chart' ? 'is-active' : ''}`}
+                onClick={() => setViewMode('chart')}
+                aria-pressed={viewMode === 'chart'}
+              >
+                <LineChartIcon size={14} />
+                <span>グラフ</span>
+              </button>
+              <button
+                type="button"
+                className={`view-toggle-btn ${viewMode === 'list' ? 'is-active' : ''}`}
+                onClick={() => setViewMode('list')}
+                aria-pressed={viewMode === 'list'}
+              >
+                <Rows3 size={14} />
+                <span>一覧</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -618,8 +830,8 @@ export function SensorDetailView({
             value={tempSum.avg != null ? tempSum.avg.toFixed(1) : '-'}
             unit="℃"
             hint={
-              useT
-                ? `基準 ${tempRange.min.toFixed(1)} 〜 ${tempRange.max.toFixed(1)}℃`
+              useT && tempT
+                ? `基準 ${formatThresholdRange(tempT.alert.min, tempT.alert.max, '℃')}`
                 : '逸脱判定なし'
             }
             icon={<Thermometer size={18} strokeWidth={2} />}
@@ -629,8 +841,8 @@ export function SensorDetailView({
             value={humSum.avg != null ? humSum.avg.toFixed(1) : '-'}
             unit="%"
             hint={
-              useH
-                ? `基準 ${thresholds.humMin.toFixed(0)} 〜 ${thresholds.humMax.toFixed(0)}%`
+              useH && humT
+                ? `基準 ${formatThresholdRange(humT.alert.min, humT.alert.max, '%')}`
                 : '逸脱判定なし'
             }
             icon={<Droplets size={18} strokeWidth={2} />}
@@ -681,20 +893,40 @@ export function SensorDetailView({
                         labelFormatter={(ts) => fmtTime(new Date(ts as number))}
                         formatter={(v) => [`${Number(v).toFixed(1)} ℃`, '温度']}
                       />
-                      {useT && (
+                      {useT && tempT && tempT.alert.enabled && (
                         <>
-                          <ReferenceLine
-                            y={tempRange.min}
-                            stroke="#c00"
-                            strokeDasharray="4 4"
-                            strokeWidth={1}
-                          />
-                          <ReferenceLine
-                            y={tempRange.max}
-                            stroke="#c00"
-                            strokeDasharray="4 4"
-                            strokeWidth={1}
-                          />
+                          {tempT.alert.min != null && (
+                            <ReferenceLine
+                              y={tempT.alert.min}
+                              stroke="#c00"
+                              strokeDasharray="4 4"
+                              strokeWidth={1}
+                            />
+                          )}
+                          {tempT.alert.max != null && (
+                            <ReferenceLine
+                              y={tempT.alert.max}
+                              stroke="#c00"
+                              strokeDasharray="4 4"
+                              strokeWidth={1}
+                            />
+                          )}
+                          {tempT.warn.enabled && tempT.warn.min != null && (
+                            <ReferenceLine
+                              y={tempT.warn.min}
+                              stroke="#d97706"
+                              strokeDasharray="4 4"
+                              strokeWidth={1}
+                            />
+                          )}
+                          {tempT.warn.enabled && tempT.warn.max != null && (
+                            <ReferenceLine
+                              y={tempT.warn.max}
+                              stroke="#d97706"
+                              strokeDasharray="4 4"
+                              strokeWidth={1}
+                            />
+                          )}
                         </>
                       )}
                       <Line
@@ -740,20 +972,40 @@ export function SensorDetailView({
                         labelFormatter={(ts) => fmtTime(new Date(ts as number))}
                         formatter={(v) => [`${Number(v).toFixed(1)} %`, '湿度']}
                       />
-                      {useH && (
+                      {useH && humT && humT.alert.enabled && (
                         <>
-                          <ReferenceLine
-                            y={thresholds.humMin}
-                            stroke="#c00"
-                            strokeDasharray="4 4"
-                            strokeWidth={1}
-                          />
-                          <ReferenceLine
-                            y={thresholds.humMax}
-                            stroke="#c00"
-                            strokeDasharray="4 4"
-                            strokeWidth={1}
-                          />
+                          {humT.alert.min != null && (
+                            <ReferenceLine
+                              y={humT.alert.min}
+                              stroke="#c00"
+                              strokeDasharray="4 4"
+                              strokeWidth={1}
+                            />
+                          )}
+                          {humT.alert.max != null && (
+                            <ReferenceLine
+                              y={humT.alert.max}
+                              stroke="#c00"
+                              strokeDasharray="4 4"
+                              strokeWidth={1}
+                            />
+                          )}
+                          {humT.warn.enabled && humT.warn.min != null && (
+                            <ReferenceLine
+                              y={humT.warn.min}
+                              stroke="#d97706"
+                              strokeDasharray="4 4"
+                              strokeWidth={1}
+                            />
+                          )}
+                          {humT.warn.enabled && humT.warn.max != null && (
+                            <ReferenceLine
+                              y={humT.warn.max}
+                              stroke="#d97706"
+                              strokeDasharray="4 4"
+                              strokeWidth={1}
+                            />
+                          )}
                         </>
                       )}
                       <Line
@@ -775,13 +1027,13 @@ export function SensorDetailView({
         ) : (
           <HistoryList
             readings={periodReadings}
-            thresholds={thresholds}
-            storageKind={storageKind}
+            thresholds={sensorThresholds}
           />
         )}
       </section>
+      )}
 
-      {sensor && (
+      {activeTab === 'basic' && sensor && (
         <SensorAlertSettings
           sensorId={deviceId}
           value={sensor.alertSettings}
@@ -792,7 +1044,52 @@ export function SensorDetailView({
         />
       )}
 
-      {sensor && (
+      {/* メンテナンス・運用メモタブ: 機種固有のメンテナンス操作（プレースホルダー）+ 運用メモ */}
+      {activeTab === 'maintenance' && sensor && (
+        <section className="panel-card maintenance-card">
+          <div className="panel-card-head">
+            <h2>
+              <Wrench size={16} className="head-icon" />
+              メンテナンス操作
+            </h2>
+            <span className="panel-card-meta muted">
+              対応機種: {sensor.manufacturer} / {sensor.model}
+            </span>
+          </div>
+          <p className="muted in-panel">
+            機種ごとに利用可能なコマンドが異なります。今後、メーカー連携の拡張に応じて操作項目を追加していきます。
+          </p>
+          <div className="maintenance-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => toast('再起動コマンドを送信しました（モック動作）', 'success')}
+            >
+              <RotateCcw size={14} />
+              <span>再起動コマンドを送信</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => toast('設定を読み出しました（モック動作）', 'info')}
+            >
+              <RefreshCw size={14} />
+              <span>設定をデバイスから読み出し</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled
+              title="メーカー連携の実装後に利用可能"
+            >
+              <Sliders size={14} />
+              <span>設定をデバイスへプッシュ</span>
+            </button>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'maintenance' && sensor && (
         <section className="panel-card sensor-notes-card">
           <div className="panel-card-head">
             <h2>
@@ -891,11 +1188,9 @@ export function SensorDetailView({
 function HistoryList({
   readings,
   thresholds,
-  storageKind,
 }: {
   readings: { measuredAt: Date; temperature: number; humidity: number; battery?: number }[]
-  thresholds: ReportThresholds
-  storageKind: StorageKind
+  thresholds: SensorThresholds | undefined
 }) {
   const truncated = readings.length > 200
   const view = truncated ? readings.slice(-200).reverse() : [...readings].reverse()
@@ -917,8 +1212,8 @@ function HistoryList({
         </thead>
         <tbody>
           {view.map((r, i) => {
-            const tDev = cellIsDeviation(r.temperature, 'temperature', thresholds, storageKind)
-            const hDev = cellIsDeviation(r.humidity, 'humidity', thresholds, storageKind)
+            const tDev = cellIsDeviation(r.temperature, 'temperature', thresholds)
+            const hDev = cellIsDeviation(r.humidity, 'humidity', thresholds)
             return (
               <tr key={`${r.measuredAt.getTime()}-${i}`}>
                 <td>{fmtTime(r.measuredAt)}</td>

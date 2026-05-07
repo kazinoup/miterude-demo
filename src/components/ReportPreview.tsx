@@ -1,12 +1,11 @@
 import type {
   MissingDisplay,
   ReportKind,
-  ReportThresholds,
   SensorReading,
+  SensorThresholds,
   YearMonth,
 } from '../types'
 import { yearMonthKey } from '../types'
-import { inferStorageKind, inferStorageKindForRange } from '../lib/report'
 import { MonthlyTableReport } from './MonthlyTableReport'
 import { SummaryReport } from './SummaryReport'
 import { WeeklyTableReport } from './WeeklyTableReport'
@@ -15,7 +14,8 @@ import { WeeklySummaryReport } from './WeeklySummaryReport'
 type CommonProps = {
   deviceId: string
   readings: SensorReading[]
-  thresholds: ReportThresholds
+  /** 該当センサーの個別閾値。未設定なら逸脱判定なし。 */
+  thresholds: SensorThresholds | undefined
   missingDisplay: MissingDisplay
 }
 
@@ -36,15 +36,6 @@ export function ReportPreview(props: Props) {
 
   if (kind === 'weekly' && props.weekStart) {
     const weekStart = props.weekStart
-    const range = {
-      start: weekStart,
-      end: (() => {
-        const e = new Date(weekStart)
-        e.setDate(e.getDate() + 7)
-        return e
-      })(),
-    }
-    const storageKind = inferStorageKindForRange(readings, range)
     const key = `${deviceId}-w-${weekStart.toISOString().slice(0, 10)}`
 
     return (
@@ -54,7 +45,6 @@ export function ReportPreview(props: Props) {
           weekStart={weekStart}
           readings={readings}
           thresholds={thresholds}
-          storageKind={storageKind}
         />
         <WeeklyTableReport
           title="温度週報"
@@ -63,7 +53,6 @@ export function ReportPreview(props: Props) {
           weekStart={weekStart}
           readings={readings}
           thresholds={thresholds}
-          storageKind={storageKind}
           missingDisplay={missingDisplay}
         />
         <WeeklyTableReport
@@ -73,7 +62,6 @@ export function ReportPreview(props: Props) {
           weekStart={weekStart}
           readings={readings}
           thresholds={thresholds}
-          storageKind={storageKind}
           missingDisplay={missingDisplay}
         />
       </article>
@@ -82,7 +70,6 @@ export function ReportPreview(props: Props) {
 
   // Monthly (default)
   const ym = props.ym!
-  const storageKind = inferStorageKind(readings, ym)
   const key = `${deviceId}-${yearMonthKey(ym)}`
 
   return (
@@ -92,7 +79,6 @@ export function ReportPreview(props: Props) {
         ym={ym}
         readings={readings}
         thresholds={thresholds}
-        storageKind={storageKind}
       />
       <MonthlyTableReport
         title="温度月報"
@@ -101,7 +87,6 @@ export function ReportPreview(props: Props) {
         ym={ym}
         readings={readings}
         thresholds={thresholds}
-        storageKind={storageKind}
         missingDisplay={missingDisplay}
       />
       <MonthlyTableReport
@@ -111,7 +96,6 @@ export function ReportPreview(props: Props) {
         ym={ym}
         readings={readings}
         thresholds={thresholds}
-        storageKind={storageKind}
         missingDisplay={missingDisplay}
       />
     </article>

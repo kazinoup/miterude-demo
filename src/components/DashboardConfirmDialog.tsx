@@ -16,7 +16,6 @@ import type {
   DashboardCheckin,
   DashboardCheckinStatus,
   DeviceStore,
-  ReportThresholds,
   SensorStore,
   UserSession,
 } from '../types'
@@ -34,7 +33,6 @@ type Props = {
   dashboard: Dashboard | null
   devices: DeviceStore
   sensors: SensorStore
-  thresholds: ReportThresholds
   session: UserSession
   /** ダッシュボードで現在表示している期間 */
   range: { start: Date; end: Date }
@@ -86,7 +84,6 @@ export function DashboardConfirmDialog({
   dashboard,
   devices,
   sensors,
-  thresholds,
   session,
   range,
   periodLabel,
@@ -129,10 +126,9 @@ export function DashboardConfirmDialog({
       dashboardSensorIds,
       devices,
       sensors,
-      thresholds,
       range,
     )
-  }, [dashboard, dashboardSensorIds, devices, sensors, thresholds, range])
+  }, [dashboard, dashboardSensorIds, devices, sensors, range])
 
   const onlineCount = useMemo(
     () => countOnline(dashboardSensorIds, sensors),

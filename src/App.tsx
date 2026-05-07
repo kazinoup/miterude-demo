@@ -25,7 +25,6 @@ import type {
   NotificationGroup,
   NotificationGroupStore,
   ReportKind,
-  ReportThresholds,
   SavedFilter,
   SavedFilterStore,
   SensorCategory,
@@ -35,6 +34,7 @@ import type {
   SensorNote,
   SensorNoteStore,
   SensorStore,
+  SensorThresholds,
   UserSession,
   ViewKey,
   Widget,
@@ -98,17 +98,6 @@ const MOCK_SESSION: UserSession = {
   email: 'inoue@canbright.co.jp',
 }
 
-const defaultThresholds: ReportThresholds = {
-  fridgeTempMin: 0,
-  fridgeTempMax: 10,
-  freezerTempMin: -30,
-  freezerTempMax: -10,
-  humMin: 40,
-  humMax: 85,
-  useTempDeviation: true,
-  useHumDeviation: true,
-}
-
 function sortIds(ids: string[]): string[] {
   return [...ids].sort()
 }
@@ -153,7 +142,7 @@ export default function App() {
   const [activeSensorId, setActiveSensorId] = useState<string | null>(null)
   const [activeGatewayId, setActiveGatewayId] = useState<string | null>(null)
 
-  const [thresholds, setThresholds] = useState<ReportThresholds>(defaultThresholds)
+  // Phase 9.11: 共通 ReportThresholds は廃止。閾値はセンサー個別 (sensor.thresholds) で管理。
   const [missingDisplay, setMissingDisplay] = useState<MissingDisplay>('blank')
 
   const [reportDeviceIds, setReportDeviceIds] = useState<string[]>([])
@@ -527,6 +516,34 @@ export default function App() {
     })
   }
 
+  function handleUpdateSensorThresholds(
+    sensorId: string,
+    thresholds: SensorThresholds | undefined,
+  ) {
+    setSensors((prev) => {
+      const cur = prev[sensorId]
+      if (!cur) return prev
+      return { ...prev, [sensorId]: { ...cur, thresholds } }
+    })
+  }
+
+  /** 基本情報（名前・デバイス番号・シリアル・モデル・メーカー・ゲートウェイ）の編集 */
+  function handleUpdateSensorInfo(
+    sensorId: string,
+    patch: Partial<
+      Pick<
+        import('./types').Sensor,
+        'name' | 'deviceNumber' | 'serialNumber' | 'model' | 'manufacturer' | 'gatewayId'
+      >
+    >,
+  ) {
+    setSensors((prev) => {
+      const cur = prev[sensorId]
+      if (!cur) return prev
+      return { ...prev, [sensorId]: { ...cur, ...patch } }
+    })
+  }
+
   function handleApplyBulkCategory(ids: string[], categoryId: string | null) {
     setSensors((prev) => {
       const next: SensorStore = { ...prev }
@@ -753,7 +770,6 @@ export default function App() {
               devices={devices}
               sensors={sensors}
               gateways={gateways}
-              thresholds={thresholds}
               dashboards={dashboards}
               activeDashboardId={activeDashboardId}
               checkins={checkins}
@@ -781,7 +797,6 @@ export default function App() {
               devices={devices}
               sensors={sensors}
               gateways={gateways}
-              thresholds={thresholds}
               groups={sensorGroups}
               categories={sensorCategories}
               savedFilters={savedFilters}
@@ -805,7 +820,6 @@ export default function App() {
               devices={devices}
               sensors={sensors}
               gateways={gateways}
-              thresholds={thresholds}
               notificationGroups={notificationGroups}
               sensorNotes={sensorNotes}
               session={MOCK_SESSION}
@@ -822,6 +836,8 @@ export default function App() {
               onUpdateSensorTags={handleUpdateSensorTags}
               onUpdateSensorGroup={handleUpdateSensorGroup}
               onUpdateSensorCategory={handleUpdateSensorCategory}
+              onUpdateSensorThresholds={handleUpdateSensorThresholds}
+              onUpdateSensorInfo={handleUpdateSensorInfo}
             />
           )}
 
@@ -875,8 +891,6 @@ export default function App() {
           {view === 'report' && (
             <ReportView
               devices={devices}
-              thresholds={thresholds}
-              onThresholds={setThresholds}
               missingDisplay={missingDisplay}
               onMissingDisplay={setMissingDisplay}
               selectedDeviceIds={reportDeviceIds}
@@ -922,7 +936,7 @@ export default function App() {
                   ym={printingBulk.ym}
                   deviceId={deviceId}
                   readings={devices[deviceId] ?? []}
-                  thresholds={thresholds}
+                  thresholds={sensors[deviceId]?.thresholds}
                   missingDisplay={missingDisplay}
                 />
               ) : (
@@ -932,7 +946,7 @@ export default function App() {
                   weekStart={printingBulk.weekStart}
                   deviceId={deviceId}
                   readings={devices[deviceId] ?? []}
-                  thresholds={thresholds}
+                  thresholds={sensors[deviceId]?.thresholds}
                   missingDisplay={missingDisplay}
                 />
               ),

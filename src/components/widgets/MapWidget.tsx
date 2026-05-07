@@ -13,13 +13,12 @@ import type {
   MapWidget as MapWidgetT,
   PinDisplay,
   PinSize,
-  ReportThresholds,
   SensorCategory,
   SensorCategoryStore,
   SensorPin,
   SensorStore,
 } from '../../types'
-import { cellIsDeviation, collectYearMonths, inferStorageKind } from '../../lib/report'
+import { cellIsDeviation } from '../../lib/report'
 import { CATEGORY_ICON_COMPONENTS } from '../../lib/categories'
 import { ensureDate } from '../../lib/mock'
 import { formatRelativeAgo } from '../../lib/jp'
@@ -29,7 +28,6 @@ type Props = {
   devices: DeviceStore
   sensors: SensorStore
   categories: SensorCategoryStore
-  thresholds: ReportThresholds
   onUpdate: (widget: MapWidgetT) => void
   onOpenSensor: (id: string) => void
   /** ダッシュボードのビュー / 編集モード。false なら配置編集 UI を非表示 */
@@ -67,7 +65,6 @@ export function MapWidget({
   devices,
   sensors,
   categories,
-  thresholds,
   onUpdate,
   onOpenSensor,
   editable = true,
@@ -229,21 +226,16 @@ export function MapWidget({
 
           const readings = devices[pin.sensorId] ?? []
           const lastReading = readings[readings.length - 1]
-          const months = collectYearMonths(readings)
-          const lastYm = months[months.length - 1]
-          const storageKind = lastYm ? inferStorageKind(readings, lastYm) : 'other'
 
           const tDev = cellIsDeviation(
             lastReading?.temperature ?? null,
             'temperature',
-            thresholds,
-            storageKind,
+            sensor.thresholds,
           )
           const hDev = cellIsDeviation(
             lastReading?.humidity ?? null,
             'humidity',
-            thresholds,
-            storageKind,
+            sensor.thresholds,
           )
 
           const isDeviation = tDev || hDev

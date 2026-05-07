@@ -1,5 +1,74 @@
-import type { MissingDisplay, ReportThresholds, SensorReading, StorageKind, YearMonth } from '../types'
+import type {
+  DeviationLevel,
+  MissingDisplay,
+  SensorReading,
+  SensorThresholds,
+  StorageKind,
+  ThresholdMetric,
+  YearMonth,
+} from '../types'
 import { yearMonthKey } from '../types'
+
+/* ---------- 閾値ヘルパ (Phase 9.11) ---------- */
+
+/** SensorThresholds から指定 metric の閾値設定を取り出す。
+ *  種別が temperature-humidity 以外、または対応する metric が無いなら undefined。 */
+export function getThresholdForMetric(
+  thresholds: SensorThresholds | undefined,
+  metric: 'temperature' | 'humidity',
+): ThresholdMetric | undefined {
+  if (!thresholds) return undefined
+  if (thresholds.kind === 'temperature-humidity') {
+    return metric === 'temperature' ? thresholds.temperature : thresholds.humidity
+  }
+  return undefined
+}
+
+/** 1 つのレベル（alert / warn）が「実際に何かを判定する状態」か。
+ *  enabled=true かつ min または max のどちらかが設定されていれば true。 */
+export function isLevelActive(level: import('../types').ThresholdLevel | undefined): boolean {
+  if (!level || !level.enabled) return false
+  return level.min != null || level.max != null
+}
+
+/** その指標について逸脱判定を行うか（危険・注意のいずれかが有効）。 */
+export function isMetricDeviationEnabled(
+  thresholds: SensorThresholds | undefined,
+  metric: 'temperature' | 'humidity',
+): boolean {
+  const m = getThresholdForMetric(thresholds, metric)
+  if (!m) return false
+  return isLevelActive(m.alert) || isLevelActive(m.warn)
+}
+
+/** 値が指定の ThresholdLevel から外れているか。 */
+function isOutOfLevel(value: number, level: import('../types').ThresholdLevel): boolean {
+  if (!level.enabled) return false
+  if (level.min != null && value < level.min) return true
+  if (level.max != null && value > level.max) return true
+  return false
+}
+
+/** 値の逸脱レベルを判定する。
+ *  - 値が無い / 判定対象外 → null
+ *  - 危険から外れる → 'alert'
+ *  - 注意から外れる（危険は範囲内）→ 'warn'
+ *  - それ以外 → 'normal' */
+export function evaluateMetricLevel(
+  value: number | null | undefined,
+  metric: 'temperature' | 'humidity',
+  thresholds: SensorThresholds | undefined,
+): DeviationLevel {
+  if (value == null) return null
+  const m = getThresholdForMetric(thresholds, metric)
+  if (!m) return null
+  const alertActive = isLevelActive(m.alert)
+  const warnActive = isLevelActive(m.warn)
+  if (!alertActive && !warnActive) return null
+  if (alertActive && isOutOfLevel(value, m.alert)) return 'alert'
+  if (warnActive && isOutOfLevel(value, m.warn)) return 'warn'
+  return 'normal'
+}
 
 export const SLOTS_PER_DAY = 48
 
@@ -68,15 +137,19 @@ export type DeviationSegment = {
  *  - 連続する逸脱を 1 セグメントに集約
  *  - 1 スロットでも正常に戻ったら別セグメント
  *  - 温度と湿度は別系統で扱う
+ *  - 注意・危険のレベルは区別せず、いずれも「逸脱」として 1 つのセグメントに含める
  */
 export function extractDeviationSegments(
   readings: SensorReading[],
   range: { start: Date; end: Date },
   metric: 'temperature' | 'humidity',
-  thresholds: ReportThresholds,
-  storageKind: StorageKind,
+  thresholds: SensorThresholds | undefined,
 ): Omit<DeviationSegment, 'sensorId'>[] {
-  if (!isMetricDeviationEnabled(metric, thresholds, storageKind)) return []
+  const m = getThresholdForMetric(thresholds, metric)
+  if (!m) return []
+  const alertActive = isLevelActive(m.alert)
+  const warnActive = isLevelActive(m.warn)
+  if (!alertActive && !warnActive) return []
 
   const slotMs = 30 * 60 * 1000
   const startMs = range.start.getTime()
@@ -99,9 +172,15 @@ export function extractDeviationSegments(
 
   if (buckets.size === 0) return []
 
-  const tr = activeTempRange(storageKind, thresholds)
-  const tMin = metric === 'temperature' ? tr.min : thresholds.humMin
-  const tMax = metric === 'temperature' ? tr.max : thresholds.humMax
+  // 表示用の「閾値」: 危険レベルを優先、なければ注意レベルを使う
+  const display = alertActive ? m.alert : m.warn
+  const tMin = display.min ?? Number.NEGATIVE_INFINITY
+  const tMax = display.max ?? Number.POSITIVE_INFINITY
+  // 「逸脱」と判定する内側の境界。注意レベルが有効なら注意の境界、
+  //  なければ危険の境界を使う（注意は危険の内側に置く想定）。
+  const detect = warnActive ? m.warn : m.alert
+  const detectMin = detect.min ?? Number.NEGATIVE_INFINITY
+  const detectMax = detect.max ?? Number.POSITIVE_INFINITY
 
   // ソートして時系列に並べる
   const sortedKeys = Array.from(buckets.keys()).sort((a, b) => a - b)
@@ -120,8 +199,8 @@ export function extractDeviationSegments(
   for (const key of sortedKeys) {
     const vs = buckets.get(key)!
     const slotAvg = vs.reduce((a, b) => a + b, 0) / vs.length
-    const isOver = slotAvg > tMax
-    const isUnder = slotAvg < tMin
+    const isOver = slotAvg > detectMax
+    const isUnder = slotAvg < detectMin
     const isDeviation = isOver || isUnder
 
     // 正常スロット → 進行中セグメントを締める
@@ -316,8 +395,11 @@ export type MetricSummary = {
   max: number | null
 }
 
-function isDeviation(v: number, min: number, max: number): boolean {
-  return v < min || v > max
+/** 指定の ThresholdMetric に対し、値が逸脱（注意以上）しているか。 */
+function isCellDeviation(value: number, m: ThresholdMetric): boolean {
+  if (isLevelActive(m.alert) && isOutOfLevel(value, m.alert)) return true
+  if (isLevelActive(m.warn) && isOutOfLevel(value, m.warn)) return true
+  return false
 }
 
 /** 当月の平均温度（℃）から冷蔵／冷凍を推定（0〜10℃＝冷蔵、0℃未満＝冷凍、それ以外＝その他） */
@@ -354,41 +436,13 @@ export function storageKindShortJp(kind: StorageKind): string {
   }
 }
 
-/** 区分に応じた温度の逸脱閾値（冷凍は冷凍用、冷蔵・その他は冷蔵用） */
-export function activeTempRange(
-  storageKind: StorageKind,
-  t: ReportThresholds,
-): { min: number; max: number } {
-  if (storageKind === 'freezer') {
-    return { min: t.freezerTempMin, max: t.freezerTempMax }
-  }
-  return { min: t.fridgeTempMin, max: t.fridgeTempMax }
-}
-
-/** その指標について逸脱（色・回数）を判定するか
- *  storageKind が 'other'（室温・平均10℃超）の月では温度の逸脱判定はオフ。
- */
-export function isMetricDeviationEnabled(
-  metric: 'temperature' | 'humidity',
-  thresholds: ReportThresholds,
-  storageKind?: StorageKind,
-): boolean {
-  if (metric === 'temperature') {
-    if (!thresholds.useTempDeviation) return false
-    if (storageKind === 'other') return false
-    return true
-  }
-  if (!thresholds.useHumDeviation) return false
-  return true
-}
-
-/** 生データに基づく計測回数・平均最大最小、スロット基準の逸脱回数 */
+/** 生データに基づく計測回数・平均最大最小、スロット基準の逸脱回数。
+ *  逸脱回数は注意・危険を合算した数。 */
 export function summarizeMetric(
   readings: SensorReading[],
   ym: YearMonth,
   metric: 'temperature' | 'humidity',
-  thresholds: ReportThresholds,
-  storageKind: StorageKind,
+  thresholds: SensorThresholds | undefined,
 ): MetricSummary {
   const monthReadings = filterReadingsForMonth(readings, ym)
   const values = monthReadings.map((r) => (metric === 'temperature' ? r.temperature : r.humidity))
@@ -400,17 +454,14 @@ export function summarizeMetric(
   const max = Math.max(...values)
   const avg = values.reduce((a, b) => a + b, 0) / count
 
-  const grid = buildMonthlyGrid(readings, ym, metric)
-  const tempR = activeTempRange(storageKind, thresholds)
-  const tMin = metric === 'temperature' ? tempR.min : thresholds.humMin
-  const tMax = metric === 'temperature' ? tempR.max : thresholds.humMax
-
   let deviationCount = 0
-  if (isMetricDeviationEnabled(metric, thresholds, storageKind)) {
+  const m = getThresholdForMetric(thresholds, metric)
+  if (m && (isLevelActive(m.alert) || isLevelActive(m.warn))) {
+    const grid = buildMonthlyGrid(readings, ym, metric)
     for (const row of grid) {
       for (const cell of row) {
         if (cell == null) continue
-        if (isDeviation(cell, tMin, tMax)) deviationCount++
+        if (isCellDeviation(cell, m)) deviationCount++
       }
     }
   }
@@ -432,8 +483,7 @@ export function summarizeRange(
   readings: SensorReading[],
   range: { start: Date; end: Date },
   metric: 'temperature' | 'humidity',
-  thresholds: ReportThresholds,
-  storageKind: StorageKind,
+  thresholds: SensorThresholds | undefined,
 ): MetricSummary {
   const filtered = readings.filter(
     (r) => r.measuredAt >= range.start && r.measuredAt < range.end,
@@ -450,7 +500,8 @@ export function summarizeRange(
   const avg = values.reduce((a, b) => a + b, 0) / count
 
   let deviationCount = 0
-  if (isMetricDeviationEnabled(metric, thresholds, storageKind)) {
+  const m = getThresholdForMetric(thresholds, metric)
+  if (m && (isLevelActive(m.alert) || isLevelActive(m.warn))) {
     const slotMs = 30 * 60 * 1000
     const buckets = new Map<number, number[]>()
     for (const r of filtered) {
@@ -460,12 +511,9 @@ export function summarizeRange(
       if (list) list.push(v)
       else buckets.set(key, [v])
     }
-    const tr = activeTempRange(storageKind, thresholds)
-    const tMin = metric === 'temperature' ? tr.min : thresholds.humMin
-    const tMax = metric === 'temperature' ? tr.max : thresholds.humMax
     for (const vs of buckets.values()) {
       const slotAvg = vs.reduce((a, b) => a + b, 0) / vs.length
-      if (slotAvg < tMin || slotAvg > tMax) deviationCount++
+      if (isCellDeviation(slotAvg, m)) deviationCount++
     }
   }
 
@@ -488,16 +536,13 @@ export function inferStorageKindForRange(
   return 'other'
 }
 
+/** 単純な「逸脱しているか？」判定（注意も危険も true）。
+ *  色分け不要な場面で使う。色分けが必要なら evaluateMetricLevel を使う。 */
 export function cellIsDeviation(
   v: number | null,
   metric: 'temperature' | 'humidity',
-  thresholds: ReportThresholds,
-  storageKind: StorageKind,
+  thresholds: SensorThresholds | undefined,
 ): boolean {
-  if (v == null) return false
-  if (!isMetricDeviationEnabled(metric, thresholds, storageKind)) return false
-  const tr = activeTempRange(storageKind, thresholds)
-  const min = metric === 'temperature' ? tr.min : thresholds.humMin
-  const max = metric === 'temperature' ? tr.max : thresholds.humMax
-  return isDeviation(v, min, max)
+  const level = evaluateMetricLevel(v, metric, thresholds)
+  return level === 'alert' || level === 'warn'
 }

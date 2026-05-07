@@ -12,23 +12,88 @@ export type DeviceStore = Record<string, SensorReading[]>
 
 export type MissingDisplay = 'blank' | 'hyphen'
 
-/** 当月の平均温度から推定する庫内区分 */
+/** 当月の平均温度から推定する庫内区分（レポートのラベル等の表示用に残置）。
+ *  Phase 9.11 以降、逸脱判定は各センサーの thresholds を直接参照するため、
+ *  この値は閾値判定には関与しない。 */
 export type StorageKind = 'refrigerator' | 'freezer' | 'other'
 
-export type ReportThresholds = {
-  /** 冷蔵庫と判定された月（平均 0〜10℃）に使う温度の下限・上限（℃） */
-  fridgeTempMin: number
-  fridgeTempMax: number
-  /** 冷凍庫と判定された月（平均 0℃未満）に使う温度の下限・上限（℃） */
-  freezerTempMin: number
-  freezerTempMax: number
-  humMin: number
-  humMax: number
-  /** false のとき温度の逸脱（色・回数）は行わない */
-  useTempDeviation: boolean
-  /** false のとき湿度の逸脱は行わない */
-  useHumDeviation: boolean
+/* ---------- センサー個別の閾値 (Phase 9.11) ----------
+ * 旧 ReportThresholds（区分別の共通閾値）は廃止し、各センサーが自分の閾値を持つ。
+ * 「未設定」(thresholds: undefined) のセンサーは逸脱判定を行わない。
+ * 警告レベルは 2 段階で、注意 (warn) はオレンジ、危険 (alert) は赤で表示する。
+ */
+
+/** 1 段階の閾値レベル（危険 / 注意 など）。
+ *  下限・上限はそれぞれ独立に設定でき、片方だけ／両方／どちらも未設定を表現できる。
+ *  下限のみ → 「N℃ 以下なら NG」
+ *  上限のみ → 「N℃ 以上なら NG」
+ *  両方     → 範囲外で NG
+ *  どちらもなし → そのレベルでは判定しない（enabled=false と同義）
+ */
+export type ThresholdLevel = {
+  /** false のときこのレベルは判定しない */
+  enabled: boolean
+  /** 下限（任意）— これを下回るとこのレベル */
+  min?: number
+  /** 上限（任意）— これを超えるとこのレベル */
+  max?: number
 }
+
+/** 1 つの計測指標（温度・湿度・電流など）の閾値 — 危険 + 注意 の 2 レベル */
+export type ThresholdMetric = {
+  /** 危険レベル（赤） */
+  alert: ThresholdLevel
+  /** 注意レベル（オレンジ） */
+  warn: ThresholdLevel
+}
+
+/** 温湿度センサー用の閾値 */
+export type TempHumidityThresholds = {
+  kind: 'temperature-humidity'
+  temperature: ThresholdMetric
+  humidity: ThresholdMetric
+}
+
+/** 将来追加予定: 電流センサー用 */
+export type CurrentSensorThresholds = {
+  kind: 'current'
+  /** 雛形のみ。実装時に設計する */
+  current: ThresholdMetric
+}
+
+/** 将来追加予定: ドアセンサー用（開閉時間など） */
+export type DoorSensorThresholds = {
+  kind: 'door'
+  /** 雛形のみ */
+}
+
+/** 将来追加予定: 水位センサー用 */
+export type WaterLevelSensorThresholds = {
+  kind: 'water-level'
+  level: ThresholdMetric
+}
+
+/** 将来追加予定: アナログメーター用 */
+export type AnalogMeterSensorThresholds = {
+  kind: 'analog-meter'
+  value: ThresholdMetric
+}
+
+/** センサー閾値の discriminated union（種別ごとに構造が異なる） */
+export type SensorThresholds =
+  | TempHumidityThresholds
+  | CurrentSensorThresholds
+  | DoorSensorThresholds
+  | WaterLevelSensorThresholds
+  | AnalogMeterSensorThresholds
+
+/** 逸脱判定結果のレベル
+ *  - 'alert': 危険（赤）
+ *  - 'warn':  注意（オレンジ）
+ *  - 'normal': 正常
+ *  - null: 判定対象外（thresholds 未設定 / enabled=false / 値が無い）
+ */
+export type DeviationLevel = 'alert' | 'warn' | 'normal' | null
 
 export type YearMonth = { year: number; month: number }
 
@@ -295,8 +360,10 @@ export type AlertSettings = {
 
 /** センサー（IoT デバイス）のメタデータ */
 export type Sensor = {
-  /** CSV ファイル名（拡張子除く）= デバイスID */
+  /** CSV ファイル名（拡張子除く）= デバイスID（不変。表示名は name を優先） */
   id: string
+  /** 表示名（任意。未設定なら id を表示。基本情報画面で編集可） */
+  name?: string
   /** 一覧表示用の連番（DV-001 形式） */
   deviceNumber: string
   /** 16桁 HEX 大文字（例: 6785F03951170020） */
@@ -327,6 +394,8 @@ export type Sensor = {
   tags?: string[]
   /** Phase 9.9: ユーザー定義区分ID（1:1、未設定は null） */
   categoryId?: string | null
+  /** Phase 9.11: センサー個別の逸脱判定閾値。未設定なら判定なし。 */
+  thresholds?: SensorThresholds
 }
 
 export type SensorStore = Record<string, Sensor>

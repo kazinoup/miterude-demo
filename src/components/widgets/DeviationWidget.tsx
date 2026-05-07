@@ -12,13 +12,10 @@ import {
 import type {
   DeviceStore,
   DeviationWidget as DeviationWidgetT,
-  ReportThresholds,
   SensorStore,
 } from '../../types'
 import {
-  collectYearMonths,
   extractDeviationSegments,
-  inferStorageKind,
   type DeviationSegment,
 } from '../../lib/report'
 
@@ -26,7 +23,6 @@ type Props = {
   widget: DeviationWidgetT
   devices: DeviceStore
   sensors: SensorStore
-  thresholds: ReportThresholds
   effectiveSensorIds: string[]
   range: { start: Date; end: Date }
   periodLabel?: string
@@ -87,7 +83,6 @@ export function DeviationWidget({
   widget: _widget,
   devices,
   sensors,
-  thresholds,
   effectiveSensorIds,
   range,
   periodLabel,
@@ -102,13 +97,9 @@ export function DeviationWidget({
       const readings = devices[id] ?? []
       if (readings.length === 0) continue
 
-      const months = collectYearMonths(readings)
-      const lastYm = months[months.length - 1]
-      const storageKind = lastYm ? inferStorageKind(readings, lastYm) : 'other'
-
       const allSegs: DeviationSegment[] = []
       for (const m of ['temperature', 'humidity'] as const) {
-        const segs = extractDeviationSegments(readings, range, m, thresholds, storageKind)
+        const segs = extractDeviationSegments(readings, range, m, sensor.thresholds)
         for (const s of segs) {
           allSegs.push({ ...s, sensorId: id })
         }
@@ -145,7 +136,7 @@ export function DeviationWidget({
       }
       return a.sensorName.localeCompare(b.sensorName)
     })
-  }, [effectiveSensorIds, devices, sensors, thresholds, range])
+  }, [effectiveSensorIds, devices, sensors, range])
 
   // 展開状態（センサー単位）
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())

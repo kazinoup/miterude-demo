@@ -14,7 +14,6 @@ import type {
   DeviceStore,
   MissingDisplay,
   ReportKind,
-  ReportThresholds,
   SavedFilterStore,
   SensorCategoryStore,
   SensorGroupStore,
@@ -37,8 +36,6 @@ import { ReportPreview } from '../ReportPreview'
 
 type Props = {
   devices: DeviceStore
-  thresholds: ReportThresholds
-  onThresholds: (t: ReportThresholds) => void
   missingDisplay: MissingDisplay
   onMissingDisplay: (m: MissingDisplay) => void
   selectedDeviceIds: string[]
@@ -88,8 +85,6 @@ function formatWeekLabel(weekStart: Date): string {
 
 export function ReportView({
   devices,
-  thresholds,
-  onThresholds,
   missingDisplay,
   onMissingDisplay,
   selectedDeviceIds,
@@ -293,7 +288,7 @@ export function ReportView({
           onClick={() => setShowThresholds((v) => !v)}
         >
           <Sliders size={16} />
-          <span>逸脱判定・閾値・欠損表示の設定</span>
+          <span>欠損表示の設定</span>
           <ChevronRight
             size={16}
             className={`chev ${showThresholds ? 'is-open' : ''}`}
@@ -301,133 +296,10 @@ export function ReportView({
         </button>
         {showThresholds && (
           <div className="advanced-body">
-            <div className="advanced-row">
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={thresholds.useTempDeviation}
-                  onChange={() =>
-                    onThresholds({
-                      ...thresholds,
-                      useTempDeviation: !thresholds.useTempDeviation,
-                    })
-                  }
-                />
-                <span>温度の逸脱を判定する</span>
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={thresholds.useHumDeviation}
-                  onChange={() =>
-                    onThresholds({
-                      ...thresholds,
-                      useHumDeviation: !thresholds.useHumDeviation,
-                    })
-                  }
-                />
-                <span>湿度の逸脱を判定する</span>
-              </label>
-            </div>
-
-            <div className="thresholds-grid">
-              <fieldset disabled={!thresholds.useTempDeviation}>
-                <legend>温度・冷蔵庫用（℃）</legend>
-                <div className="num-pair">
-                  <label>
-                    <span>下限</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={thresholds.fridgeTempMin}
-                      onChange={(e) =>
-                        onThresholds({
-                          ...thresholds,
-                          fridgeTempMin: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span>上限</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={thresholds.fridgeTempMax}
-                      onChange={(e) =>
-                        onThresholds({
-                          ...thresholds,
-                          fridgeTempMax: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-              </fieldset>
-
-              <fieldset disabled={!thresholds.useTempDeviation}>
-                <legend>温度・冷凍庫用（℃）</legend>
-                <div className="num-pair">
-                  <label>
-                    <span>下限</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={thresholds.freezerTempMin}
-                      onChange={(e) =>
-                        onThresholds({
-                          ...thresholds,
-                          freezerTempMin: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span>上限</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={thresholds.freezerTempMax}
-                      onChange={(e) =>
-                        onThresholds({
-                          ...thresholds,
-                          freezerTempMax: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-              </fieldset>
-
-              <fieldset disabled={!thresholds.useHumDeviation} className="span-2">
-                <legend>湿度（共通・%）</legend>
-                <div className="num-pair">
-                  <label>
-                    <span>下限</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={thresholds.humMin}
-                      onChange={(e) =>
-                        onThresholds({ ...thresholds, humMin: Number(e.target.value) })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span>上限</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={thresholds.humMax}
-                      onChange={(e) =>
-                        onThresholds({ ...thresholds, humMax: Number(e.target.value) })
-                      }
-                    />
-                  </label>
-                </div>
-              </fieldset>
-            </div>
-
+            <p className="muted in-panel">
+              逸脱判定の閾値（温度・湿度の上下限）は、各センサーの詳細画面で個別に設定してください。
+              レポートはセンサーごとの設定に基づいて出力されます。
+            </p>
             <div className="advanced-row">
               <span className="row-label">欠損表示</span>
               <label className="radio-inline">
@@ -516,7 +388,7 @@ export function ReportView({
                   ym={printMonth}
                   deviceId={previewDevice}
                   readings={devices[previewDevice] ?? []}
-                  thresholds={thresholds}
+                  thresholds={sensors[previewDevice]?.thresholds}
                   missingDisplay={missingDisplay}
                 />
               ) : printKind === 'weekly' && printWeekStart ? (
@@ -526,7 +398,7 @@ export function ReportView({
                   weekStart={printWeekStart}
                   deviceId={previewDevice}
                   readings={devices[previewDevice] ?? []}
-                  thresholds={thresholds}
+                  thresholds={sensors[previewDevice]?.thresholds}
                   missingDisplay={missingDisplay}
                 />
               ) : null}

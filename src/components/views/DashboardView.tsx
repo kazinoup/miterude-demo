@@ -27,7 +27,6 @@ import type {
   DashboardStore,
   DeviceStore,
   GatewayStore,
-  ReportThresholds,
   SavedFilter,
   SavedFilterStore,
   SensorCategoryStore,
@@ -52,7 +51,6 @@ type Props = {
   devices: DeviceStore
   sensors: SensorStore
   gateways: GatewayStore
-  thresholds: ReportThresholds
   dashboards: DashboardStore
   activeDashboardId: string | null
   checkins: DashboardCheckinStore
@@ -129,7 +127,6 @@ export function DashboardView({
   devices,
   sensors,
   gateways,
-  thresholds,
   dashboards,
   activeDashboardId,
   checkins,
@@ -475,7 +472,6 @@ export function DashboardView({
                       sensors={sensors}
                       gateways={gateways}
                       categories={sensorCategories}
-                      thresholds={thresholds}
                       onOpenSensor={onOpenSensor}
                     />
                   ) : w.type === 'chart' ? (
@@ -493,7 +489,6 @@ export function DashboardView({
                       devices={devices}
                       sensors={sensors}
                       categories={sensorCategories}
-                      thresholds={thresholds}
                       onUpdate={(next) => onUpdateWidget(dashboard.id, next)}
                       onOpenSensor={onOpenSensor}
                       editable={editMode}
@@ -503,7 +498,6 @@ export function DashboardView({
                       widget={w}
                       devices={devices}
                       sensors={sensors}
-                      thresholds={thresholds}
                       effectiveSensorIds={effIds}
                       range={effectiveRange}
                       periodLabel={effectiveLabel}
@@ -561,7 +555,6 @@ export function DashboardView({
         dashboard={dashboard}
         devices={devices}
         sensors={sensors}
-        thresholds={thresholds}
         session={session}
         range={effectiveRange}
         periodLabel={effectiveLabel}

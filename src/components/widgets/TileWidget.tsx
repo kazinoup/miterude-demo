@@ -2,13 +2,12 @@ import { Thermometer, Droplets, Tags, AlertCircle } from 'lucide-react'
 import type {
   DeviceStore,
   GatewayStore,
-  ReportThresholds,
   SensorCategory,
   SensorCategoryStore,
   SensorStore,
   TileWidget as TileWidgetT,
 } from '../../types'
-import { cellIsDeviation, collectYearMonths, inferStorageKind } from '../../lib/report'
+import { cellIsDeviation } from '../../lib/report'
 import { CATEGORY_ICON_COMPONENTS } from '../../lib/categories'
 import { ensureDate } from '../../lib/mock'
 import { formatRelativeAgo } from '../../lib/jp'
@@ -19,7 +18,6 @@ type Props = {
   sensors: SensorStore
   gateways: GatewayStore
   categories: SensorCategoryStore
-  thresholds: ReportThresholds
   onOpenSensor: (id: string) => void
 }
 
@@ -47,7 +45,6 @@ export function TileWidget({
   sensors,
   gateways: _gateways,
   categories,
-  thresholds,
   onOpenSensor,
 }: Props) {
   if (widget.sensorIds.length === 0) {
@@ -72,21 +69,16 @@ export function TileWidget({
         }
         const readings = devices[sid] ?? []
         const lastReading = readings[readings.length - 1]
-        const months = collectYearMonths(readings)
-        const lastYm = months[months.length - 1]
-        const storageKind = lastYm ? inferStorageKind(readings, lastYm) : 'other'
 
         const tDev = cellIsDeviation(
           lastReading?.temperature ?? null,
           'temperature',
-          thresholds,
-          storageKind,
+          sensor.thresholds,
         )
         const hDev = cellIsDeviation(
           lastReading?.humidity ?? null,
           'humidity',
-          thresholds,
-          storageKind,
+          sensor.thresholds,
         )
 
         const lastAt = lastReading

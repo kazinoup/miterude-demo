@@ -1,19 +1,18 @@
 import { Fragment } from 'react'
 import type {
   MissingDisplay,
-  ReportThresholds,
   SensorReading,
-  StorageKind,
+  SensorThresholds,
 } from '../types'
 import {
-  activeTempRange,
   buildWeeklyGrid,
   cellIsDeviation,
   formatCellValue,
+  getThresholdForMetric,
   isMetricDeviationEnabled,
   summarizeRange,
 } from '../lib/report'
-import { weekdayJp, formatHumRange, formatTempRange } from '../lib/jp'
+import { weekdayJp, formatThresholdRange } from '../lib/jp'
 
 type Metric = 'temperature' | 'humidity'
 
@@ -23,8 +22,7 @@ type Props = {
   deviceId: string
   weekStart: Date
   readings: SensorReading[]
-  thresholds: ReportThresholds
-  storageKind: StorageKind
+  thresholds: SensorThresholds | undefined
   missingDisplay: MissingDisplay
 }
 
@@ -49,7 +47,6 @@ export function WeeklyTableReport({
   weekStart,
   readings,
   thresholds,
-  storageKind,
   missingDisplay,
 }: Props) {
   const range = {
@@ -62,10 +59,10 @@ export function WeeklyTableReport({
   }
 
   const grid = buildWeeklyGrid(readings, weekStart, metric)
-  const summary = summarizeRange(readings, range, metric, thresholds, storageKind)
+  const summary = summarizeRange(readings, range, metric, thresholds)
   const decimals = 1
-  const tempR = activeTempRange(storageKind, thresholds)
-  const showDeviationStats = isMetricDeviationEnabled(metric, thresholds, storageKind)
+  const showDeviationStats = isMetricDeviationEnabled(thresholds, metric)
+  const m = getThresholdForMetric(thresholds, metric)
 
   // 週報用ヘッダ表記（「【2024年10月14日 〜 20日】CK01」）
   const heroPeriodLabel = formatPeriodWeekJp(weekStart)
@@ -107,13 +104,15 @@ export function WeeklyTableReport({
             <td>{metric === 'temperature' ? '温度' : '湿度'}</td>
             <th>計測回数</th>
             <td>{summary.count}</td>
-            {showDeviationStats ? (
+            {showDeviationStats && m ? (
               <>
                 <th>基準</th>
                 <td>
-                  {metric === 'temperature'
-                    ? formatTempRange(tempR.min, tempR.max)
-                    : formatHumRange(thresholds.humMin, thresholds.humMax)}
+                  {formatThresholdRange(
+                    m.alert.min,
+                    m.alert.max,
+                    metric === 'temperature' ? '℃' : '%',
+                  )}
                 </td>
                 <th>逸脱回数</th>
                 <td className={summary.deviationCount > 0 ? 'deviation' : ''}>
@@ -179,7 +178,7 @@ export function WeeklyTableReport({
                     </th>
                     {Array.from({ length: 7 }, (_, col) => {
                       const v = grid[rowA]?.[col] ?? null
-                      const dev = cellIsDeviation(v, metric, thresholds, storageKind)
+                      const dev = cellIsDeviation(v, metric, thresholds)
                       const text = formatCellValue(v, missingDisplay, decimals)
                       return (
                         <td key={col} className={dev ? 'cell-deviation' : ''}>
@@ -191,7 +190,7 @@ export function WeeklyTableReport({
                   <tr className="monthly-hour-row monthly-hour-row-sub">
                     {Array.from({ length: 7 }, (_, col) => {
                       const v = grid[rowB]?.[col] ?? null
-                      const dev = cellIsDeviation(v, metric, thresholds, storageKind)
+                      const dev = cellIsDeviation(v, metric, thresholds)
                       const text = formatCellValue(v, missingDisplay, decimals)
                       return (
                         <td key={col} className={dev ? 'cell-deviation' : ''}>

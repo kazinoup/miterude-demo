@@ -12,7 +12,6 @@ import type {
   DashboardCheckin,
   DashboardCheckinStore,
   DeviceStore,
-  ReportThresholds,
   Sensor,
   SensorNote,
   SensorNoteCategory,
@@ -23,9 +22,7 @@ import type {
 } from '../types'
 import {
   cellIsDeviation,
-  collectYearMonths,
   extractDeviationSegments,
-  inferStorageKind,
   type DeviationSegment,
 } from './report'
 import { ensureDate, hash16 } from './mock'
@@ -77,7 +74,6 @@ export function detectDeviationsForRange(
   sensorIds: string[],
   devices: DeviceStore,
   sensors: SensorStore,
-  thresholds: ReportThresholds,
   range: { start: Date; end: Date },
 ): SensorDeviationGroup[] {
   const out: SensorDeviationGroup[] = []
@@ -87,13 +83,9 @@ export function detectDeviationsForRange(
     const readings = devices[id] ?? []
     if (readings.length === 0) continue
 
-    const months = collectYearMonths(readings)
-    const lastYm = months[months.length - 1]
-    const storageKind = lastYm ? inferStorageKind(readings, lastYm) : 'other'
-
     const segs: DeviationSegment[] = []
     for (const m of ['temperature', 'humidity'] as const) {
-      const found = extractDeviationSegments(readings, range, m, thresholds, storageKind)
+      const found = extractDeviationSegments(readings, range, m, sensor.thresholds)
       for (const s of found) {
         segs.push({ ...s, sensorId: id })
       }
@@ -147,7 +139,6 @@ export function detectRecentDeviations(
   sensorIds: string[],
   devices: DeviceStore,
   sensors: SensorStore,
-  thresholds: ReportThresholds,
   lookbackHours: number,
   now: Date = new Date(),
 ): RecentDeviationItem[] {
@@ -160,10 +151,6 @@ export function detectRecentDeviations(
     const readings = devices[id] ?? []
     if (readings.length === 0) continue
 
-    const months = collectYearMonths(readings)
-    const lastYm = months[months.length - 1]
-    const storageKind = lastYm ? inferStorageKind(readings, lastYm) : 'other'
-
     let tDev = false
     let hDev = false
     let lastTempVal: number | undefined
@@ -172,11 +159,11 @@ export function detectRecentDeviations(
     for (const r of readings) {
       const t = ensureDate(r.measuredAt).getTime()
       if (t < cutoff) continue
-      if (cellIsDeviation(r.temperature, 'temperature', thresholds, storageKind)) {
+      if (cellIsDeviation(r.temperature, 'temperature', sensor.thresholds)) {
         tDev = true
         lastTempVal = r.temperature
       }
-      if (cellIsDeviation(r.humidity, 'humidity', thresholds, storageKind)) {
+      if (cellIsDeviation(r.humidity, 'humidity', sensor.thresholds)) {
         hDev = true
         lastHumVal = r.humidity
       }

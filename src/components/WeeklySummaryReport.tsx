@@ -8,13 +8,12 @@ import {
   YAxis,
 } from 'recharts'
 import type {
-  ReportThresholds,
   SensorReading,
-  StorageKind,
+  SensorThresholds,
 } from '../types'
-import { formatHumRange, formatTempRange } from '../lib/jp'
+import { formatThresholdRange } from '../lib/jp'
 import {
-  activeTempRange,
+  getThresholdForMetric,
   isMetricDeviationEnabled,
   summarizeRange,
 } from '../lib/report'
@@ -26,8 +25,7 @@ type Props = {
   deviceId: string
   weekStart: Date
   readings: SensorReading[]
-  thresholds: ReportThresholds
-  storageKind: StorageKind
+  thresholds: SensorThresholds | undefined
 }
 
 function formatPeriodWeekJp(weekStart: Date): string {
@@ -64,7 +62,6 @@ export function WeeklySummaryReport({
   weekStart,
   readings,
   thresholds,
-  storageKind,
 }: Props) {
   const range = {
     start: weekStart,
@@ -81,8 +78,8 @@ export function WeeklySummaryReport({
     return t >= startMs && t < endMs
   })
 
-  const tempSum = summarizeRange(readings, range, 'temperature', thresholds, storageKind)
-  const humSum = summarizeRange(readings, range, 'humidity', thresholds, storageKind)
+  const tempSum = summarizeRange(readings, range, 'temperature', thresholds)
+  const humSum = summarizeRange(readings, range, 'humidity', thresholds)
 
   const chartData = periodReadings.map((r) => ({
     ts: ensureDate(r.measuredAt).getTime(),
@@ -92,9 +89,10 @@ export function WeeklySummaryReport({
 
   const now = new Date()
   const outputDate = now.toLocaleDateString('ja-JP')
-  const tempRange = activeTempRange(storageKind, thresholds)
-  const useT = isMetricDeviationEnabled('temperature', thresholds, storageKind)
-  const useH = isMetricDeviationEnabled('humidity', thresholds, storageKind)
+  const tempT = getThresholdForMetric(thresholds, 'temperature')
+  const humT = getThresholdForMetric(thresholds, 'humidity')
+  const useT = isMetricDeviationEnabled(thresholds, 'temperature')
+  const useH = isMetricDeviationEnabled(thresholds, 'humidity')
   const showDeviationRows = useT || useH
   const heroPeriodLabel = formatPeriodWeekJp(weekStart)
 
@@ -232,8 +230,16 @@ export function WeeklySummaryReport({
             {showDeviationRows ? (
               <tr>
                 <th>基準</th>
-                <td>{useT ? formatTempRange(tempRange.min, tempRange.max) : '—'}</td>
-                <td>{useH ? formatHumRange(thresholds.humMin, thresholds.humMax) : '—'}</td>
+                <td>
+                  {useT && tempT
+                    ? formatThresholdRange(tempT.alert.min, tempT.alert.max, '℃')
+                    : '—'}
+                </td>
+                <td>
+                  {useH && humT
+                    ? formatThresholdRange(humT.alert.min, humT.alert.max, '%')
+                    : '—'}
+                </td>
               </tr>
             ) : null}
             <tr>

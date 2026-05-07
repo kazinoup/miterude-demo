@@ -1,9 +1,6 @@
-import { useEffect, useState } from 'react'
-import { Bell, Save, RotateCcw, Send } from 'lucide-react'
+import { Bell, Send } from 'lucide-react'
 import type { AlertSettings, NotificationGroupStore } from '../types'
 import { NOTIFICATION_TIMING_LABELS } from '../types'
-import { defaultAlertSettings } from '../lib/mock'
-import { toast } from '../lib/toast'
 
 type Props = {
   sensorId: string
@@ -21,38 +18,24 @@ const OFFLINE_PRESETS: { label: string; minutes: number }[] = [
   { label: '24 時間', minutes: 1440 },
 ]
 
+/**
+ * センサーごとのアラート設定 — Phase 9.12 でリアルタイム保存に統一。
+ *
+ * 順序:
+ * 1. 通知グループ（送信先・送信タイミング）
+ * 2. オフライン通知
+ * 3. 連続逸脱通知
+ */
 export function SensorAlertSettings({
-  sensorId,
+  sensorId: _sensorId,
   value,
   onChange,
   notificationGroups,
   notificationGroupId,
   onNotificationGroupChange,
 }: Props) {
-  // 編集中の値（保存ボタンで反映）
-  const [draft, setDraft] = useState<AlertSettings>(value)
-  const [dirty, setDirty] = useState(false)
-
-  useEffect(() => {
-    setDraft(value)
-    setDirty(false)
-  }, [value, sensorId])
-
   function update<K extends keyof AlertSettings>(key: K, val: AlertSettings[K]) {
-    setDraft((d) => ({ ...d, [key]: val }))
-    setDirty(true)
-  }
-
-  function handleSave() {
-    onChange(draft)
-    setDirty(false)
-    toast(`${sensorId} のアラート設定を保存しました`, 'success')
-  }
-
-  function handleReset() {
-    const def = defaultAlertSettings()
-    setDraft(def)
-    setDirty(true)
+    onChange({ ...value, [key]: val })
   }
 
   return (
@@ -62,26 +45,9 @@ export function SensorAlertSettings({
           <Bell size={16} className="head-icon" />
           アラート設定
         </h2>
-        <div className="panel-card-meta">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={handleReset}
-            title="既定値に戻す"
-          >
-            <RotateCcw size={14} />
-            <span>既定値</span>
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={!dirty}
-            onClick={handleSave}
-          >
-            <Save size={14} />
-            <span>{dirty ? '保存' : '保存済み'}</span>
-          </button>
-        </div>
+        <span className="panel-card-meta muted">
+          変更は自動保存されます
+        </span>
       </div>
 
       <div className="alert-form">
@@ -117,7 +83,7 @@ export function SensorAlertSettings({
           <label className="check-row">
             <input
               type="checkbox"
-              checked={draft.offlineEnabled}
+              checked={value.offlineEnabled}
               onChange={(e) => update('offlineEnabled', e.target.checked)}
             />
             <span>センサーからの受信が途絶えたら通知する</span>
@@ -129,9 +95,9 @@ export function SensorAlertSettings({
                 <button
                   key={p.minutes}
                   type="button"
-                  disabled={!draft.offlineEnabled}
+                  disabled={!value.offlineEnabled}
                   className={`chip-toggle ${
-                    draft.offlineThresholdMinutes === p.minutes ? 'is-active' : ''
+                    value.offlineThresholdMinutes === p.minutes ? 'is-active' : ''
                   }`}
                   onClick={() => update('offlineThresholdMinutes', p.minutes)}
                 >
@@ -147,7 +113,7 @@ export function SensorAlertSettings({
           <label className="check-row">
             <input
               type="checkbox"
-              checked={draft.deviationEnabled}
+              checked={value.deviationEnabled}
               onChange={(e) => update('deviationEnabled', e.target.checked)}
             />
             <span>連続して閾値を超えたら通知する</span>
@@ -160,8 +126,8 @@ export function SensorAlertSettings({
                 min={1}
                 max={50}
                 step={1}
-                disabled={!draft.deviationEnabled}
-                value={draft.deviationConsecutiveCount}
+                disabled={!value.deviationEnabled}
+                value={value.deviationConsecutiveCount}
                 onChange={(e) =>
                   update(
                     'deviationConsecutiveCount',

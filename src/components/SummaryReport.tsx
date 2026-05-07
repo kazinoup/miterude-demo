@@ -7,12 +7,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import type { ReportThresholds, SensorReading, StorageKind, YearMonth } from '../types'
-import { formatHumRange, formatPeriodLongJp, formatTempRange } from '../lib/jp'
+import type { SensorReading, SensorThresholds, YearMonth } from '../types'
+import { formatPeriodLongJp, formatThresholdRange } from '../lib/jp'
 import {
-  activeTempRange,
   daysInMonth,
   filterReadingsForMonth,
+  getThresholdForMetric,
   isMetricDeviationEnabled,
   summarizeMetric,
 } from '../lib/report'
@@ -38,8 +38,7 @@ type Props = {
   deviceId: string
   ym: YearMonth
   readings: SensorReading[]
-  thresholds: ReportThresholds
-  storageKind: StorageKind
+  thresholds: SensorThresholds | undefined
 }
 
 export function SummaryReport({
@@ -47,12 +46,11 @@ export function SummaryReport({
   ym,
   readings,
   thresholds,
-  storageKind,
 }: Props) {
   const monthReadings = filterReadingsForMonth(readings, ym)
   const lastDay = daysInMonth(ym.year, ym.month)
-  const tempSum = summarizeMetric(readings, ym, 'temperature', thresholds, storageKind)
-  const humSum = summarizeMetric(readings, ym, 'humidity', thresholds, storageKind)
+  const tempSum = summarizeMetric(readings, ym, 'temperature', thresholds)
+  const humSum = summarizeMetric(readings, ym, 'humidity', thresholds)
 
   const chartData = monthReadings.map((r) => ({
     ts: r.measuredAt.getTime(),
@@ -62,9 +60,10 @@ export function SummaryReport({
 
   const now = new Date()
   const outputDate = now.toLocaleDateString('ja-JP')
-  const tempRange = activeTempRange(storageKind, thresholds)
-  const useT = isMetricDeviationEnabled('temperature', thresholds, storageKind)
-  const useH = isMetricDeviationEnabled('humidity', thresholds, storageKind)
+  const tempT = getThresholdForMetric(thresholds, 'temperature')
+  const humT = getThresholdForMetric(thresholds, 'humidity')
+  const useT = isMetricDeviationEnabled(thresholds, 'temperature')
+  const useH = isMetricDeviationEnabled(thresholds, 'humidity')
   const showDeviationRows = useT || useH
 
   return (
@@ -196,8 +195,16 @@ export function SummaryReport({
             {showDeviationRows ? (
               <tr>
                 <th>基準</th>
-                <td>{useT ? formatTempRange(tempRange.min, tempRange.max) : '—'}</td>
-                <td>{useH ? formatHumRange(thresholds.humMin, thresholds.humMax) : '—'}</td>
+                <td>
+                  {useT && tempT
+                    ? formatThresholdRange(tempT.alert.min, tempT.alert.max, '℃')
+                    : '—'}
+                </td>
+                <td>
+                  {useH && humT
+                    ? formatThresholdRange(humT.alert.min, humT.alert.max, '%')
+                    : '—'}
+                </td>
               </tr>
             ) : null}
             <tr>

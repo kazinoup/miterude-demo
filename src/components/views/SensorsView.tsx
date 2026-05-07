@@ -29,7 +29,6 @@ import type {
   FilterConditions,
   Gateway,
   GatewayStore,
-  ReportThresholds,
   SavedFilter,
   SavedFilterStore,
   Sensor,
@@ -39,13 +38,10 @@ import type {
   SensorGroupStore,
   SensorReading,
   SensorStore,
-  StorageKind,
 } from '../../types'
 import {
-  activeTempRange,
-  cellIsDeviation,
-  collectYearMonths,
-  inferStorageKind,
+  evaluateMetricLevel,
+  getThresholdForMetric,
   isMetricDeviationEnabled,
 } from '../../lib/report'
 import {
@@ -77,7 +73,6 @@ type Props = {
   devices: DeviceStore
   sensors: SensorStore
   gateways: GatewayStore
-  thresholds: ReportThresholds
   groups: SensorGroupStore
   categories: SensorCategoryStore
   savedFilters: SavedFilterStore
@@ -100,7 +95,6 @@ type SensorRow = {
   first?: Date
   last?: Date
   monthCount: number
-  storageKind: StorageKind
   lastTemp?: number
   lastHum?: number
   gateway?: Gateway
@@ -143,23 +137,18 @@ function buildRow(
       sensor,
       count: 0,
       monthCount: 0,
-      storageKind: 'other',
       gateway: gateways[sensor.gatewayId],
     }
   }
   const first = readings[0].measuredAt
   const last = readings[readings.length - 1].measuredAt
-  const months = collectYearMonths(readings)
-  const lastYm = months[months.length - 1]
-  const storageKind = lastYm ? inferStorageKind(readings, lastYm) : 'other'
   const lastReading = readings[readings.length - 1]
   return {
     sensor,
     count: readings.length,
     first,
     last,
-    monthCount: months.length,
-    storageKind,
+    monthCount: 0, // 不要になったが互換のため残置
     lastTemp: lastReading?.temperature,
     lastHum: lastReading?.humidity,
     gateway: gateways[sensor.gatewayId],
@@ -182,28 +171,26 @@ function fmtDateTime(d?: Date): string {
  */
 function LatestValueCell({
   row,
-  thresholds,
 }: {
   row: SensorRow
-  thresholds: ReportThresholds
 }) {
-  const { lastTemp, lastHum, storageKind } = row
+  const { lastTemp, lastHum, sensor } = row
   const hasTemp = lastTemp != null
   const hasHum = lastHum != null
   if (!hasTemp && !hasHum) {
     return <span className="muted">—</span>
   }
-  const tDev = cellIsDeviation(lastTemp ?? null, 'temperature', thresholds, storageKind)
-  const hDev = cellIsDeviation(lastHum ?? null, 'humidity', thresholds, storageKind)
+  const tLevel = evaluateMetricLevel(lastTemp ?? null, 'temperature', sensor.thresholds)
+  const hLevel = evaluateMetricLevel(lastHum ?? null, 'humidity', sensor.thresholds)
   return (
     <span className="latest-values">
       {hasTemp && (
-        <span className={`latest-value ${tDev ? 'cell-deviation' : ''}`}>
+        <span className={`latest-value ${levelClass(tLevel)}`}>
           {lastTemp!.toFixed(1)}℃
         </span>
       )}
       {hasHum && (
-        <span className={`latest-value ${hDev ? 'cell-deviation' : ''}`}>
+        <span className={`latest-value ${levelClass(hLevel)}`}>
           {lastHum!.toFixed(1)}%
         </span>
       )}
@@ -211,41 +198,54 @@ function LatestValueCell({
   )
 }
 
-/** 閾値セル: 温湿度センサー前提で、現在の storageKind に応じた閾値を表示する。
- *  「温度のみ」「湿度のみ」逸脱判定がオフの場合は "—" を該当箇所に出す。
- */
-function ThresholdCell({
-  storageKind,
-  thresholds,
-}: {
-  storageKind: StorageKind
-  thresholds: ReportThresholds
-}) {
-  const useT = isMetricDeviationEnabled('temperature', thresholds, storageKind)
-  const useH = isMetricDeviationEnabled('humidity', thresholds, storageKind)
+/** 逸脱レベル → CSS クラス */
+function levelClass(level: ReturnType<typeof evaluateMetricLevel>): string {
+  if (level === 'alert') return 'cell-deviation'
+  if (level === 'warn') return 'cell-warning'
+  return ''
+}
+
+/** 閾値セル: そのセンサー個別の閾値（温度・湿度）の危険レベルを表示する。
+ *  「温度のみ」「湿度のみ」逸脱判定がオフの場合は "—" を該当箇所に出す。 */
+function ThresholdCell({ sensor }: { sensor: Sensor }) {
+  const useT = isMetricDeviationEnabled(sensor.thresholds, 'temperature')
+  const useH = isMetricDeviationEnabled(sensor.thresholds, 'humidity')
   if (!useT && !useH) {
-    return <span className="muted">逸脱判定なし</span>
+    return <span className="muted">未設定</span>
   }
-  const tr = activeTempRange(storageKind, thresholds)
+  const tempT = getThresholdForMetric(sensor.thresholds, 'temperature')
+  const humT = getThresholdForMetric(sensor.thresholds, 'humidity')
   return (
     <span className="threshold-cell">
-      {useT ? (
+      {useT && tempT ? (
         <span className="threshold-part">
-          {tr.min.toFixed(0)}〜{tr.max.toFixed(0)}℃
+          {formatThresholdShort(tempT.alert.min, tempT.alert.max, '℃')}
         </span>
       ) : (
         <span className="threshold-part muted">—℃</span>
       )}
       <span className="threshold-sep">/</span>
-      {useH ? (
+      {useH && humT ? (
         <span className="threshold-part">
-          {thresholds.humMin.toFixed(0)}〜{thresholds.humMax.toFixed(0)}%
+          {formatThresholdShort(humT.alert.min, humT.alert.max, '%')}
         </span>
       ) : (
         <span className="threshold-part muted">—%</span>
       )}
     </span>
   )
+}
+
+/** セル表示用の短縮形（小数点なし）: "0〜10℃" / "0℃〜" / "〜10℃" */
+function formatThresholdShort(
+  min: number | undefined,
+  max: number | undefined,
+  unit: string,
+): string {
+  if (min != null && max != null) return `${min.toFixed(0)}〜${max.toFixed(0)}${unit}`
+  if (min != null) return `${min.toFixed(0)}${unit}〜`
+  if (max != null) return `〜${max.toFixed(0)}${unit}`
+  return '—'
 }
 
 /** 件数表示 + ページ送りボタンのセット。上下のツールバーで共用する。 */
@@ -424,16 +424,17 @@ function GroupBadge({
 
 type TileProps = {
   row: SensorRow
-  thresholds: ReportThresholds
   group?: SensorGroup
   category?: SensorCategory
   onOpen: (id: string) => void
 }
 
-function SensorTile({ row, thresholds, group, category, onOpen }: TileProps) {
+function SensorTile({ row, group, category, onOpen }: TileProps) {
   const { sensor } = row
-  const tDev = cellIsDeviation(row.lastTemp ?? null, 'temperature', thresholds, row.storageKind)
-  const hDev = cellIsDeviation(row.lastHum ?? null, 'humidity', thresholds, row.storageKind)
+  const tLevel = evaluateMetricLevel(row.lastTemp ?? null, 'temperature', sensor.thresholds)
+  const hLevel = evaluateMetricLevel(row.lastHum ?? null, 'humidity', sensor.thresholds)
+  const tDev = tLevel === 'alert' || tLevel === 'warn'
+  const hDev = hLevel === 'alert' || hLevel === 'warn'
 
   return (
     <article
@@ -462,7 +463,7 @@ function SensorTile({ row, thresholds, group, category, onOpen }: TileProps) {
             <Thermometer size={13} strokeWidth={2.2} />
             温度
           </span>
-          <div className={`tile-reading-value ${tDev ? 'cell-deviation' : ''}`}>
+          <div className={`tile-reading-value ${levelClass(tLevel)}`}>
             <span className="num-big">
               {row.lastTemp != null ? row.lastTemp.toFixed(1) : '-'}
             </span>
@@ -474,7 +475,7 @@ function SensorTile({ row, thresholds, group, category, onOpen }: TileProps) {
             <Droplets size={13} strokeWidth={2.2} />
             湿度
           </span>
-          <div className={`tile-reading-value ${hDev ? 'cell-deviation' : ''}`}>
+          <div className={`tile-reading-value ${levelClass(hLevel)}`}>
             <span className="num-big">
               {row.lastHum != null ? row.lastHum.toFixed(1) : '-'}
             </span>
@@ -506,7 +507,6 @@ export function SensorsView({
   devices,
   sensors,
   gateways,
-  thresholds,
   groups,
   categories,
   savedFilters,
@@ -999,15 +999,12 @@ export function SensorsView({
                       )}
                       {vis.latestValue && (
                         <td className="num col-latestValue">
-                          <LatestValueCell row={r} thresholds={thresholds} />
+                          <LatestValueCell row={r} />
                         </td>
                       )}
                       {vis.threshold && (
                         <td className="threshold-col col-threshold">
-                          <ThresholdCell
-                            storageKind={r.storageKind}
-                            thresholds={thresholds}
-                          />
+                          <ThresholdCell sensor={r.sensor} />
                         </td>
                       )}
                       <td
@@ -1035,7 +1032,6 @@ export function SensorsView({
               <SensorTile
                 key={r.sensor.id}
                 row={r}
-                thresholds={thresholds}
                 group={r.sensor.groupId ? groups[r.sensor.groupId] : undefined}
                 category={
                   r.sensor.categoryId ? categories[r.sensor.categoryId] : undefined

@@ -797,6 +797,10 @@
   color: var(--danger);
 }
 
+.tile-reading-value.cell-warning {
+  color: #d97706;
+}
+
 .num-big {
   font-size: 1.55rem;
   font-weight: 700;
@@ -811,6 +815,10 @@
 
 .tile-reading-value.cell-deviation .num-unit {
   color: var(--danger);
+}
+
+.tile-reading-value.cell-warning .num-unit {
+  color: #d97706;
 }
 
 .tile-footer {
@@ -5751,6 +5759,482 @@
   padding-left: 1.25rem;
   padding-right: 1.25rem;
 }
+
+/* ---------- Phase 9.11: 注意レベル（warn）の色（オレンジ） ---------- */
+/*
+ * 危険（alert）は既存の cell-deviation（赤 #c00）を維持。
+ * 注意（warn）は新規の cell-warning（オレンジ）を追加する。
+ * 両方混在するセルでは cell-deviation を優先。
+ */
+.cell-warning {
+  color: #d97706;
+}
+
+.latest-value.cell-warning {
+  color: #d97706;
+  font-weight: 600;
+}
+
+/* ---------- Phase 9.11: SensorDetailView タブ ---------- */
+.detail-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.6rem 0 1rem;
+  border-bottom: 1px solid var(--gray-200);
+  flex-wrap: wrap;
+}
+
+.detail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.95rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  font-size: 0.88rem;
+  color: var(--gray-600);
+  cursor: pointer;
+  font-family: inherit;
+  margin-bottom: -1px; /* タブ下線とパネル境界を重ねる */
+  transition:
+    background 100ms ease,
+    color 100ms ease,
+    border-color 100ms ease;
+}
+
+.detail-tab:hover {
+  background: var(--gray-50);
+  color: var(--navy-700);
+}
+
+.detail-tab.is-active {
+  background: #fff;
+  color: var(--navy-800);
+  font-weight: 700;
+  border-color: var(--gray-200);
+}
+
+.detail-tab.is-active::after {
+  content: '';
+  position: absolute;
+  /* タブの下端の一本線を消すために、active タブの下に白を被せたいが
+     簡易には mb:-1px + 白背景で対応している */
+}
+
+.detail-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+}
+
+/* ---------- Phase 9.11: SensorThresholdSettings ---------- */
+.threshold-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.threshold-settings-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.threshold-settings-unsupported {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--gray-50);
+  border: 1px dashed var(--gray-300);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.threshold-settings-unsupported code {
+  font-size: 0.78rem;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 3px;
+  padding: 0.05rem 0.3rem;
+}
+
+.threshold-metric {
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  padding: 0.6rem 0.85rem 0.85rem;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.threshold-metric:disabled {
+  background: var(--gray-50);
+  opacity: 0.85;
+}
+
+.threshold-metric-legend {
+  padding: 0;
+}
+
+.threshold-metric-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+}
+
+.threshold-metric-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 700;
+  color: var(--navy-800);
+  font-size: 0.92rem;
+}
+
+.threshold-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.threshold-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.84rem;
+  color: var(--gray-700);
+  min-width: 11em;
+  font-weight: 500;
+}
+
+.threshold-icon-alert {
+  color: #c00;
+}
+
+.threshold-icon-warn {
+  color: #d97706;
+}
+
+.threshold-input-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--gray-700);
+}
+
+.threshold-input-pair-label {
+  font-size: 0.78rem;
+  color: var(--gray-600);
+}
+
+.threshold-input-pair input[type='number'] {
+  width: 5.5em;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.threshold-input-pair input[type='number']:focus {
+  outline: 2px solid var(--navy-400);
+  outline-offset: -1px;
+  border-color: var(--navy-500);
+}
+
+.threshold-input-unit {
+  font-size: 0.78rem;
+  color: var(--gray-600);
+}
+
+.threshold-row .threshold-sep {
+  color: var(--gray-400);
+  font-size: 0.85rem;
+}
+
+.threshold-warn-clear {
+  font-size: 0.76rem;
+  margin-left: 0.4rem;
+}
+
+.threshold-validation {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0.4rem 0.55rem;
+  background: rgba(204, 0, 0, 0.06);
+  border: 1px solid rgba(204, 0, 0, 0.2);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: #a00;
+}
+
+.threshold-validation li {
+  padding: 0.05rem 0;
+}
+
+.threshold-settings-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.threshold-settings-foot .threshold-clear {
+  margin-right: auto;
+  color: var(--gray-600);
+}
+
+.threshold-settings-foot .threshold-clear:hover {
+  color: #a00;
+}
+
+.threshold-dirty-note {
+  font-size: 0.78rem;
+}
+
+/* ---------- Phase 9.11: メンテナンスタブ ---------- */
+.maintenance-card .maintenance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.maintenance-card .maintenance-actions .btn {
+  min-width: 14em;
+  justify-content: flex-start;
+}
+
+/* ---------- Phase 9.12: 基本情報の編集可能フィールド ---------- */
+/*
+ * セレクト・テキスト入力を 2 行に分けて配置。
+ * 1 行目: センサー名（やや広め）/ デバイス番号 / シリアル番号
+ * 2 行目: モデル / メーカー / ゲートウェイ
+ */
+.meta-edit-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 0.75rem 1rem;
+  margin: 0.5rem 0 0.6rem;
+}
+
+@media (max-width: 720px) {
+  .meta-edit-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.meta-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.meta-edit-field-name {
+  /* センサー名は広めに */
+}
+
+.meta-edit-label {
+  font-size: 0.74rem;
+  color: var(--gray-600);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.meta-edit-field .form-input {
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 5px;
+  font-size: 0.88rem;
+  font-family: inherit;
+  background: #fff;
+}
+
+.meta-edit-field .form-input.cell-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.84rem;
+}
+
+.meta-edit-field .form-input:focus {
+  outline: 2px solid var(--navy-400);
+  outline-offset: -1px;
+  border-color: var(--navy-500);
+}
+
+.meta-edit-gateway {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.meta-edit-gateway .select {
+  flex: 1;
+  min-width: 0;
+}
+
+.meta-edit-gateway-link {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.meta-readonly-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed var(--gray-200);
+  font-size: 0.82rem;
+}
+
+.meta-readonly-label {
+  color: var(--gray-600);
+  font-weight: 600;
+}
+
+.meta-readonly-value.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--navy-800);
+}
+
+.panel-card-meta-note {
+  font-size: 0.74rem;
+}
+
+/* ---------- Phase 9.12: 分類を 3 列にする ---------- */
+.classify-row.classify-row-3col {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 880px) {
+  .classify-row.classify-row-3col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .classify-row.classify-row-3col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Phase 9.12: 閾値設定 v2（独立トグル + 任意 min/max） ---------- */
+/* 既存の .threshold-row を上書き */
+.threshold-row {
+  display: grid;
+  grid-template-columns: minmax(170px, auto) 1fr;
+  align-items: start;
+  gap: 0.5rem 0.75rem;
+  padding: 0.55rem 0;
+  border-top: 1px dashed var(--gray-200);
+}
+
+.threshold-row:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.threshold-row.is-off .threshold-row-inputs {
+  opacity: 0.45;
+}
+
+.threshold-row-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.threshold-row-toggle input[type='checkbox'] {
+  flex-shrink: 0;
+}
+
+.threshold-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--gray-800);
+  font-weight: 600;
+}
+
+.threshold-row-label .muted {
+  font-weight: 400;
+  font-size: 0.76rem;
+}
+
+.threshold-row-inputs {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  transition: opacity 100ms ease;
+}
+
+.threshold-input-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--gray-800);
+}
+
+.threshold-input-pair input[type='number'] {
+  width: 5.5em;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  background: #fff;
+}
+
+.threshold-input-pair input[type='number']:disabled {
+  background: var(--gray-50);
+  color: var(--gray-500);
+}
+
+.threshold-input-hint {
+  font-size: 0.72rem;
+}
+
+/* footer は閾値クリアボタンのみが残るので右寄せ調整は不要 */
+.threshold-settings-foot {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--gray-200);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.threshold-settings-foot .threshold-clear {
+  margin: 0;
+  color: var(--gray-600);
+}
+
+.threshold-settings-foot .threshold-clear:hover {
+  color: #a00;
+}
+
+
 
 
 
