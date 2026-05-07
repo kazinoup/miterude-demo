@@ -12,7 +12,10 @@
 import {
   AlertOctagon,
   AlertTriangle,
+  ArrowDownToLine,
+  ArrowUpToLine,
   Droplets,
+  Info,
   Thermometer,
 } from 'lucide-react'
 import type {
@@ -44,6 +47,15 @@ export function TempHumidityThresholdsEditor({ value, onChange }: Props) {
 
   return (
     <div className="threshold-values-editor">
+      <p className="threshold-help">
+        <Info size={12} className="threshold-help-icon" />
+        <span>
+          <ArrowDownToLine size={11} strokeWidth={2.4} className="threshold-arrow-down" />
+          下限値を下回るか、
+          <ArrowUpToLine size={11} strokeWidth={2.4} className="threshold-arrow-up" />
+          上限値を上回ると発動します。片方だけ設定すれば、その方向だけの閾値として動作します。
+        </span>
+      </p>
       <ThresholdMetricEditor
         title="温度"
         icon={<Thermometer size={14} />}
@@ -153,7 +165,16 @@ function ThresholdLevelEditor({
       </label>
 
       <div className="threshold-row-inputs" aria-hidden={!level.enabled}>
-        <label className="threshold-input-pair">
+        <label
+          className="threshold-input-pair"
+          title="この値を下回ると発動します。設定しなければ下限の判定はしません。"
+        >
+          <ArrowDownToLine
+            size={11}
+            strokeWidth={2.4}
+            className="threshold-arrow-down"
+            aria-hidden="true"
+          />
           <span className="threshold-input-pair-label">下限</span>
           <input
             type="number"
@@ -165,10 +186,16 @@ function ThresholdLevelEditor({
           />
           <span className="threshold-input-unit">{unit}</span>
         </label>
-        <span className="threshold-row-sep" aria-hidden="true">
-          〜
-        </span>
-        <label className="threshold-input-pair">
+        <label
+          className="threshold-input-pair"
+          title="この値を上回ると発動します。設定しなければ上限の判定はしません。"
+        >
+          <ArrowUpToLine
+            size={11}
+            strokeWidth={2.4}
+            className="threshold-arrow-up"
+            aria-hidden="true"
+          />
           <span className="threshold-input-pair-label">上限</span>
           <input
             type="number"

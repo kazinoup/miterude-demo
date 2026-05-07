@@ -6687,3 +6687,54 @@
   color: var(--gray-700);
   overflow-x: auto;
 }
+
+/* ---------- Phase 9.16: 閾値ロジックのハイブリッド表記 ---------- */
+
+/* エディタ上部の説明文 */
+.threshold-help {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  margin: 0 0 0.6rem;
+  background: rgba(15, 39, 68, 0.04);
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--gray-700);
+  line-height: 1.6;
+}
+
+.threshold-help-icon {
+  flex-shrink: 0;
+  margin-top: 0.18rem;
+  color: var(--navy-700);
+}
+
+.threshold-help span {
+  flex: 1;
+}
+
+.threshold-help .threshold-arrow-down,
+.threshold-help .threshold-arrow-up {
+  display: inline-block;
+  vertical-align: text-bottom;
+  margin-right: 0.1rem;
+}
+
+/* 矢印アイコンは方向（下限／上限）を示すだけで、危険度はレベル側
+ *  （alert アイコン / warn アイコン）で表現する。色はニュートラル。 */
+.threshold-arrow-down,
+.threshold-arrow-up {
+  color: var(--gray-500);
+}
+
+/* 入力ペアの先頭にアイコンを置けるよう gap を整える */
+.threshold-input-pair > svg {
+  flex-shrink: 0;
+}
+
+.threshold-input-pair {
+  /* 既存の inline-flex を流用、アイコンとラベルの間を詰める */
+  gap: 0.25rem;
+}
