@@ -130,12 +130,15 @@ function ThresholdLevelEditor({
 }) {
   const Icon = kind === 'alert' ? AlertOctagon : AlertTriangle
   const noteClass = kind === 'alert' ? 'threshold-icon-alert' : 'threshold-icon-warn'
-  const description =
-    kind === 'alert' ? '範囲外で赤（危険）' : '範囲外でオレンジ（注意）'
 
   return (
     <div
       className={`threshold-row threshold-row-${kind} ${level.enabled ? 'is-on' : 'is-off'}`}
+      title={
+        kind === 'alert'
+          ? '範囲外で赤（危険）'
+          : '範囲外でオレンジ（注意）'
+      }
     >
       <label className="threshold-row-toggle">
         <input
@@ -146,7 +149,6 @@ function ThresholdLevelEditor({
         <span className="threshold-row-label">
           <Icon size={12} className={noteClass} />
           {title}
-          <span className="muted">（{description}）</span>
         </span>
       </label>
 
@@ -159,11 +161,13 @@ function ThresholdLevelEditor({
             value={level.min ?? ''}
             disabled={!level.enabled}
             onChange={(e) => onChange({ min: parseNumOrUndef(e.target.value) })}
-            placeholder="未設定"
+            placeholder="—"
           />
           <span className="threshold-input-unit">{unit}</span>
-          <span className="threshold-input-hint muted">未満で発動</span>
         </label>
+        <span className="threshold-row-sep" aria-hidden="true">
+          〜
+        </span>
         <label className="threshold-input-pair">
           <span className="threshold-input-pair-label">上限</span>
           <input
@@ -172,10 +176,9 @@ function ThresholdLevelEditor({
             value={level.max ?? ''}
             disabled={!level.enabled}
             onChange={(e) => onChange({ max: parseNumOrUndef(e.target.value) })}
-            placeholder="未設定"
+            placeholder="—"
           />
           <span className="threshold-input-unit">{unit}</span>
-          <span className="threshold-input-hint muted">超過で発動</span>
         </label>
       </div>
     </div>

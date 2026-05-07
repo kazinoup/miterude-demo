@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Webhook,
   Sliders,
+  FileText,
 } from 'lucide-react'
 import type {
   ManufacturerIntegration,
@@ -27,7 +28,7 @@ import type {
 import { NOTIFICATION_TIMING_LABELS, SENSOR_KIND_DEFS } from '../../types'
 import { NotificationGroupEditDialog } from '../NotificationGroupEditDialog'
 import { ManufacturerIntegrationDialog } from '../ManufacturerIntegrationDialog'
-import { ThresholdTemplateManageDialog } from '../ThresholdTemplateManageDialog'
+import { ThresholdTemplateEditDialog } from '../ThresholdTemplateEditDialog'
 
 type Props = {
   notificationGroups: NotificationGroupStore
@@ -58,6 +59,33 @@ function countByGroup(sensors: SensorStore, groupId: string): number {
   return n
 }
 
+/** テンプレ内容のかんたんなサマリ表示（例: "温度 0〜10℃ / 湿度 40〜85%"） */
+function summarizeTemplate(t: ThresholdTemplate): string {
+  if (t.thresholds.kind !== 'temperature-humidity') return '—'
+  const parts: string[] = []
+  const tt = t.thresholds.temperature
+  const hh = t.thresholds.humidity
+  if (tt.alert.enabled && (tt.alert.min != null || tt.alert.max != null)) {
+    parts.push(formatLevelSummary('温度', tt.alert.min, tt.alert.max, '℃'))
+  }
+  if (hh.alert.enabled && (hh.alert.min != null || hh.alert.max != null)) {
+    parts.push(formatLevelSummary('湿度', hh.alert.min, hh.alert.max, '%'))
+  }
+  return parts.length > 0 ? parts.join(' / ') : '判定対象なし'
+}
+
+function formatLevelSummary(
+  label: string,
+  min: number | undefined,
+  max: number | undefined,
+  unit: string,
+): string {
+  if (min != null && max != null) return `${label} ${min}〜${max}${unit}`
+  if (min != null) return `${label} ${min}${unit}以上`
+  if (max != null) return `${label} ${max}${unit}以下`
+  return label
+}
+
 function ChannelBadge({ channel }: { channel: NotificationGroup['channels'][number] }) {
   const Icon =
     channel.kind === 'email'
@@ -85,7 +113,10 @@ export function SettingsView({
   onDeleteThresholdTemplate,
 }: Props) {
   const [tab, setTab] = useState<Tab>('integrations')
-  const [thresholdDialogOpen, setThresholdDialogOpen] = useState(false)
+  const [thresholdEditDialog, setThresholdEditDialog] = useState<{
+    open: boolean
+    initial: ThresholdTemplate | null
+  }>({ open: false, initial: null })
 
   const [groupDialog, setGroupDialog] = useState<{
     open: boolean
@@ -335,39 +366,86 @@ export function SettingsView({
               <Sliders size={16} className="head-icon" />
               閾値テンプレート
             </h2>
-            <span className="panel-card-meta">
-              よく使う閾値の組み合わせを保存しておき、各センサーや一括選択で
-              呼び出して適用できます
-            </span>
+            <div className="panel-card-meta">
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() =>
+                  setThresholdEditDialog({ open: true, initial: null })
+                }
+              >
+                <Plus size={14} />
+                <span>新しいテンプレート</span>
+              </button>
+            </div>
           </div>
           <p className="muted in-panel">
-            登録済みのテンプレート: {Object.keys(thresholdTemplates).length} 件。
-            一覧の編集や新規作成は専用ダイアログから行います。
+            よく使う閾値の組み合わせを保存しておくと、各センサーや一括選択で
+            まとめて適用できます。テンプレートを編集しても、すでに適用済みの
+            センサー側の値は変わりません（スナップショット方式）。
           </p>
-          <div className="threshold-template-summary">
-            {Object.values(thresholdTemplates)
-              .sort((a, b) => a.name.localeCompare(b.name))
-              .slice(0, 6)
-              .map((t) => (
-                <span key={t.id} className="threshold-template-chip">
-                  <Sliders size={11} />
-                  {t.name}
-                </span>
-              ))}
-            {Object.keys(thresholdTemplates).length > 6 && (
-              <span className="muted">…ほか</span>
-            )}
-          </div>
-          <div className="settings-section-actions">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => setThresholdDialogOpen(true)}
-            >
-              <Pencil size={14} />
-              <span>テンプレートを管理</span>
-            </button>
-          </div>
+
+          {Object.keys(thresholdTemplates).length === 0 ? (
+            <p className="muted in-panel">テンプレートがまだありません。</p>
+          ) : (
+            <ul className="template-list">
+              {Object.values(thresholdTemplates)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((t) => (
+                  <li key={t.id} className="template-list-item">
+                    <div className="template-list-main">
+                      <button
+                        type="button"
+                        className="template-list-name-btn"
+                        onClick={() =>
+                          setThresholdEditDialog({ open: true, initial: t })
+                        }
+                        title="編集"
+                      >
+                        <FileText size={13} />
+                        <strong className="template-list-name">{t.name}</strong>
+                      </button>
+                      {t.description && (
+                        <span className="template-list-desc muted">
+                          {t.description}
+                        </span>
+                      )}
+                      <span className="template-list-summary">
+                        {summarizeTemplate(t)}
+                      </span>
+                    </div>
+                    <div className="template-list-actions">
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label="編集"
+                        onClick={() =>
+                          setThresholdEditDialog({ open: true, initial: t })
+                        }
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn icon-btn-danger"
+                        aria-label="削除"
+                        onClick={() => {
+                          if (
+                            confirm(
+                              `テンプレート「${t.name}」を削除しますか？`,
+                            )
+                          ) {
+                            onDeleteThresholdTemplate(t.id)
+                          }
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+          )}
         </section>
       )}
 
@@ -434,12 +512,14 @@ export function SettingsView({
         }}
       />
 
-      <ThresholdTemplateManageDialog
-        open={thresholdDialogOpen}
-        templates={thresholdTemplates}
-        onClose={() => setThresholdDialogOpen(false)}
-        onUpsert={onUpsertThresholdTemplate}
-        onDelete={onDeleteThresholdTemplate}
+      <ThresholdTemplateEditDialog
+        open={thresholdEditDialog.open}
+        initial={thresholdEditDialog.initial}
+        onClose={() => setThresholdEditDialog({ open: false, initial: null })}
+        onSubmit={(t) => {
+          onUpsertThresholdTemplate(t)
+          setThresholdEditDialog({ open: false, initial: null })
+        }}
       />
     </div>
   )

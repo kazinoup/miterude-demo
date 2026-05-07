@@ -2620,6 +2620,10 @@
   max-width: 480px;
 }
 
+.app-dialog-md {
+  max-width: 760px;
+}
+
 .app-dialog::backdrop {
   background: rgba(15, 39, 68, 0.32);
   backdrop-filter: blur(2px);
@@ -6134,14 +6138,16 @@
   }
 }
 
-/* ---------- Phase 9.12: 閾値設定 v2（独立トグル + 任意 min/max） ---------- */
-/* 既存の .threshold-row を上書き */
+/* ---------- Phase 9.15: 閾値設定 v3（横 1 行レイアウト） ---------- */
+/*  危険・注意の各レベルを 1 行に収める。
+ *  [☐ 危険]  下限 [..]℃ 〜 上限 [..]℃
+ */
 .threshold-row {
-  display: grid;
-  grid-template-columns: minmax(170px, auto) 1fr;
-  align-items: start;
-  gap: 0.5rem 0.75rem;
-  padding: 0.55rem 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 0.85rem;
+  padding: 0.5rem 0;
   border-top: 1px dashed var(--gray-200);
 }
 
@@ -6160,6 +6166,8 @@
   gap: 0.4rem;
   cursor: pointer;
   user-select: none;
+  /* チェック + ラベルで固定幅にしておくと、危険・注意で揃って整う */
+  min-width: 5.5em;
 }
 
 .threshold-row-toggle input[type='checkbox'] {
@@ -6181,11 +6189,18 @@
 }
 
 .threshold-row-inputs {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.85rem;
+  gap: 0.55rem;
   flex-wrap: wrap;
   transition: opacity 100ms ease;
+}
+
+/* 「下限 [..] 〜 上限 [..]」の "〜" 区切り */
+.threshold-row-sep {
+  color: var(--gray-400);
+  font-size: 0.85rem;
+  user-select: none;
 }
 
 .threshold-input-pair {
