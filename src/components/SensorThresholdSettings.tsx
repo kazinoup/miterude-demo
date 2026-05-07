@@ -42,22 +42,22 @@ function defaultMetric(): ThresholdMetric {
   }
 }
 
-/** ThresholdMetric が「実質的に何かを判定する状態」か */
-function isMetricActive(m: ThresholdMetric): boolean {
-  const a = m.alert
-  const w = m.warn
-  const alertOn = a.enabled && (a.min != null || a.max != null)
-  const warnOn = w.enabled && (w.min != null || w.max != null)
-  return alertOn || warnOn
+/** ThresholdMetric に「ユーザの編集意図」（チェック ON）が残っているか。
+ *  min/max が空でも、チェック ON なら保存し続ける。
+ *  実際の逸脱判定は lib/report.ts の isLevelActive（enabled かつ min/max
+ *  どちらかが設定済み）で行うので、enabled だけの状態は「設定中だが
+ *  まだ値が入っていない」中間状態として正しく扱われる。 */
+function hasUserIntent(m: ThresholdMetric): boolean {
+  return m.alert.enabled || m.warn.enabled
 }
 
 /** 上位に渡す TempHumidityThresholds を組み立てる。
- *  両指標とも空なら undefined（閾値なし）を返す。 */
+ *  両指標ともユーザの編集意図がない（どのチェックも OFF）なら undefined を返す。 */
 function buildPayload(
   temp: ThresholdMetric,
   hum: ThresholdMetric,
 ): TempHumidityThresholds | undefined {
-  if (!isMetricActive(temp) && !isMetricActive(hum)) return undefined
+  if (!hasUserIntent(temp) && !hasUserIntent(hum)) return undefined
   return { kind: 'temperature-humidity', temperature: temp, humidity: hum }
 }
 
@@ -120,7 +120,7 @@ export function SensorThresholdSettings({ sensor, onChange }: Props) {
         onChange={patchHumidity}
       />
 
-      {(isMetricActive(temp) || isMetricActive(hum)) && (
+      {(hasUserIntent(temp) || hasUserIntent(hum)) && (
         <footer className="threshold-settings-foot">
           <button
             type="button"
