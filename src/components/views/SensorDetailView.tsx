@@ -368,7 +368,6 @@ export function SensorDetailView({
             <ChevronRight size={14} className="bc-sep" />
             <span className="device-title-id">{sensor?.name || deviceId}</span>
           </h1>
-          <p>{readings.length.toLocaleString('ja-JP')} 件の計測データ</p>
         </div>
         <div className="view-header-actions">
           <div className="device-switcher">

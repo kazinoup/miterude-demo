@@ -295,9 +295,6 @@ export function GatewayDetailView({
             <ChevronRight size={14} className="bc-sep" />
             <span className="device-title-id">{gateway.name}</span>
           </h1>
-          <p>
-            {gateway.model} ・ {gateway.manufacturer} ・ {linkedSensors.length} 台のセンサーを接続
-          </p>
         </div>
       </header>
 
