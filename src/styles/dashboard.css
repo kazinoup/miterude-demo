@@ -6469,16 +6469,18 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  /* 項目どうしの上下間隔。3 タブ（連携設定 / 通知グループ / 閾値テンプレート）共通 */
+  gap: 0.7rem;
 }
 
 .template-list-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.55rem 0.7rem;
+  gap: 0.6rem;
+  /* 各カードの内側パディング。縦方向にも少し余裕を持たせる */
+  padding: 0.95rem 1rem;
   border: 1px solid var(--gray-200);
-  border-radius: 6px;
+  border-radius: 8px;
   background: #fff;
 }
 
@@ -6486,7 +6488,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  /* 名前→説明→サマリー→送信先 の各行の間隔 */
+  gap: 0.35rem;
   min-width: 0;
 }
 
@@ -6527,6 +6530,24 @@
   align-items: center;
   gap: 0.2rem;
   flex-shrink: 0;
+}
+
+/* 連携設定 — ステータスバッジを名前と同じ行に並べる */
+.template-list-name-row {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+/* 通知グループ — 送信先バッジを横並び表示 */
+.template-list-channels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  margin-top: 0.1rem;
 }
 
 /* テンプレート管理ダイアログ — フォーム */
@@ -6760,35 +6781,44 @@
   display: block;
 }
 
-/* ---------- Phase 9.17: 対応デバイス一覧 ---------- */
+/* ---------- Phase 9.18: 対応デバイス一覧（メーカー単位）---------- */
 
-.supported-device-section {
-  margin-top: 1rem;
+/* メーカーごとのセクション */
+.manufacturer-section {
+  margin-top: 1.4rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--gray-200);
 }
 
-.supported-device-section:first-of-type {
+.manufacturer-section:first-of-type {
   margin-top: 0.4rem;
+  padding-top: 0;
+  border-top: none;
 }
 
-.supported-device-section-title {
+.manufacturer-section-head {
+  margin: 0 0 0.7rem;
+}
+
+.manufacturer-section-title-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 0.4rem 0.6rem;
-  margin: 0 0 0.5rem;
-  font-size: 0.95rem;
-  color: var(--navy-800);
+  gap: 0.5rem 0.6rem;
+}
+
+.manufacturer-section-name {
+  margin: 0;
+  font-size: 1.02rem;
   font-weight: 700;
+  color: var(--navy-800);
+  letter-spacing: 0.01em;
 }
 
-.supported-device-section-title svg {
-  align-self: center;
-  color: var(--navy-700);
-}
-
-.supported-device-section-desc {
-  font-size: 0.78rem;
-  font-weight: 400;
+.manufacturer-section-desc {
+  margin: 0.3rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.6;
 }
 
 .supported-device-grid {
@@ -6800,11 +6830,13 @@
 .supported-device-card {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.85rem 1rem;
+  /* 画像領域とテキスト領域の間に gap は持たない（画像が card の上端に密着） */
+  gap: 0;
+  padding: 0;
   border: 1px solid var(--gray-200);
   border-radius: 8px;
   background: #fff;
+  overflow: hidden;
   transition: border-color 100ms ease, box-shadow 100ms ease;
 }
 
@@ -6825,13 +6857,19 @@
   gap: 0.4rem;
 }
 
+/* メーカー名は section ヘッダに移動したのでカード上では使わなくなったが、
+ * 念のためスタイル定義は残す（将来の流用想定） */
 .supported-device-manufacturer {
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
   color: var(--gray-600);
   font-weight: 600;
-  text-transform: uppercase;
 }
+
+/* カード上部のカテゴリバッジは「温湿度センサー / ゲートウェイ」(typeLabel)
+ * と二重表示になるため撤去（Phase 9.18）。
+ * カテゴリの視覚的区別が必要な場合は、画像領域フォールバックの
+ * アイコン（Cpu / Router）で行う。 */
 
 .supported-device-badge {
   display: inline-flex;
@@ -6875,4 +6913,55 @@
   font-size: 0.82rem;
   line-height: 1.6;
   color: var(--gray-700);
+}
+
+/* ---------- Phase 9.18: 対応デバイスカード — 画像領域 ---------- */
+
+.supported-device-image-wrap {
+  width: 100%;
+  height: 140px;
+  background: var(--gray-50);
+  border-bottom: 1px solid var(--gray-200);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.supported-device-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  /* 画像のホバー時に少し拡大（カタログ感） */
+  transition: transform 200ms ease;
+}
+
+.supported-device-card:hover .supported-device-image {
+  transform: scale(1.04);
+}
+
+/* 画像未設定 / 404 のときのフォールバック */
+.supported-device-image-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(15, 39, 68, 0.06);
+  color: var(--navy-700);
+}
+
+.supported-device-card.is-future .supported-device-image-wrap {
+  /* 対応予定の機種は画像領域も少し沈めて表示 */
+  filter: grayscale(0.4);
+  opacity: 0.85;
+}
+
+/* テキストエリアは元のパディングを当てる */
+.supported-device-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
 }

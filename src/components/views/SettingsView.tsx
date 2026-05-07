@@ -30,8 +30,8 @@ import type {
 } from '../../types'
 import { NOTIFICATION_TIMING_LABELS, SENSOR_KIND_DEFS } from '../../types'
 import {
-  DEVICE_CATEGORY_DEFS,
-  devicesByCategory,
+  MANUFACTURERS,
+  devicesByManufacturer,
   type SupportedDevice,
 } from '../../lib/supportedDevices'
 import { NotificationGroupEditDialog } from '../NotificationGroupEditDialog'
@@ -53,7 +53,7 @@ type Props = {
 type Tab = 'integrations' | 'notifications' | 'thresholds' | 'devices'
 
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
-  { key: 'integrations', label: 'デバイス連携', icon: Plug },
+  { key: 'integrations', label: '連携設定', icon: Plug },
   { key: 'notifications', label: '通知グループ', icon: Bell },
   { key: 'thresholds', label: '閾値テンプレート', icon: Sliders },
   { key: 'devices', label: '対応デバイス', icon: Boxes },
@@ -95,29 +95,41 @@ function formatLevelSummary(
 }
 
 function DeviceCard({ device }: { device: SupportedDevice }) {
+  const [imgError, setImgError] = useState(false)
+  const showImage = device.imageUrl && !imgError
+  const FallbackIcon = device.category === 'sensor' ? Cpu : RouterIcon
   return (
     <article
       className={`supported-device-card ${device.supported ? '' : 'is-future'}`}
     >
-      <header className="supported-device-card-head">
-        <span className="supported-device-manufacturer">
-          {device.manufacturer}
-        </span>
-        {device.supported ? (
-          <span className="supported-device-badge supported-device-badge-active">
-            <CheckCircle2 size={11} strokeWidth={2.4} />
-            対応中
-          </span>
+      <div className="supported-device-image-wrap">
+        {showImage ? (
+          <img
+            src={device.imageUrl}
+            alt={device.model}
+            className="supported-device-image"
+            onError={() => setImgError(true)}
+            loading="lazy"
+          />
         ) : (
-          <span className="supported-device-badge supported-device-badge-future">
-            <Clock size={11} strokeWidth={2.4} />
-            対応予定
-          </span>
+          <div className="supported-device-image-fallback" aria-hidden="true">
+            <FallbackIcon size={32} strokeWidth={1.4} />
+          </div>
         )}
-      </header>
-      <h4 className="supported-device-model">{device.model}</h4>
-      <p className="supported-device-type muted">{device.typeLabel}</p>
-      <p className="supported-device-desc">{device.description}</p>
+      </div>
+      <div className="supported-device-card-body">
+        {!device.supported && (
+          <header className="supported-device-card-head">
+            <span className="supported-device-badge supported-device-badge-future">
+              <Clock size={11} strokeWidth={2.4} />
+              対応予定
+            </span>
+          </header>
+        )}
+        <h4 className="supported-device-model">{device.model}</h4>
+        <p className="supported-device-type muted">{device.typeLabel}</p>
+        <p className="supported-device-desc">{device.description}</p>
+      </div>
     </article>
   )
 }
@@ -170,13 +182,22 @@ export function SettingsView({
     [notificationGroups],
   )
 
-  const integrationList = useMemo(
-    () =>
-      Object.values(manufacturerIntegrations).sort((a, b) =>
-        a.manufacturer.localeCompare(b.manufacturer),
-      ),
-    [manufacturerIntegrations],
-  )
+  const integrationList = useMemo(() => {
+    // 対応デバイスタブと同じ並び（MANUFACTURERS の宣言順）に揃える。
+    // Milesight が先、IoT Mobile が後ろ。マスタに無いメーカーは末尾に
+    // 名前順で並べる（将来増えても破綻しないように）。
+    const orderIndex = new Map<string, number>()
+    MANUFACTURERS.forEach((m, idx) => {
+      orderIndex.set(m.name, idx)
+    })
+    const FAR = Number.MAX_SAFE_INTEGER
+    return Object.values(manufacturerIntegrations).sort((a, b) => {
+      const ai = orderIndex.get(a.manufacturer) ?? FAR
+      const bi = orderIndex.get(b.manufacturer) ?? FAR
+      if (ai !== bi) return ai - bi
+      return a.manufacturer.localeCompare(b.manufacturer)
+    })
+  }, [manufacturerIntegrations])
 
   return (
     <div className="settings-view">
@@ -209,36 +230,48 @@ export function SettingsView({
       {tab === 'integrations' && (
         <section className="panel-card">
           <div className="panel-card-head">
-            <h2>サポート対象</h2>
+            <h2>
+              <Plug size={16} className="head-icon" />
+              連携設定
+            </h2>
             <span className="panel-card-meta">
-              Webhook を受け取って計測データを取り込みます。
+              Webhook を受け取って計測データを取り込むメーカー連携の一覧です。
             </span>
           </div>
-          <div className="device-table-wrap">
-            <table className="device-table">
-              <thead>
-                <tr>
-                  <th>メーカー</th>
-                  <th>連携状態</th>
-                  <th>取扱種別</th>
-                  <th>シークレット</th>
-                  <th aria-label="操作"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {integrationList.map((i) => (
-                  <tr
-                    key={i.id}
-                    className="device-row"
-                    onClick={() => setIntegrationDialog({ open: true, initial: i })}
-                  >
-                    <td>
-                      <div className="device-id">
-                        <span className="device-id-name">{i.manufacturer}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge ${i.enabled ? 'badge-online' : 'badge-offline'}`}>
+          <p className="muted in-panel multiline-help">
+            <span>
+              ミテルデ側で対応しているメーカーの連携 ON/OFF と、
+              受信用シークレットを管理します。
+            </span>
+            <span>
+              項目をクリックすると、連携状態・取扱種別・シークレットを編集できます。
+            </span>
+          </p>
+
+          {integrationList.length === 0 ? (
+            <p className="muted in-panel">連携できるメーカーがまだありません。</p>
+          ) : (
+            <ul className="template-list">
+              {integrationList.map((i) => (
+                <li key={i.id} className="template-list-item">
+                  <div className="template-list-main">
+                    <div className="template-list-name-row">
+                      <button
+                        type="button"
+                        className="template-list-name-btn"
+                        onClick={() =>
+                          setIntegrationDialog({ open: true, initial: i })
+                        }
+                        title="設定"
+                      >
+                        <Plug size={13} />
+                        <strong className="template-list-name">
+                          {i.manufacturer}
+                        </strong>
+                      </button>
+                      <span
+                        className={`badge ${i.enabled ? 'badge-online' : 'badge-offline'}`}
+                      >
                         {i.enabled ? (
                           <>
                             <ShieldCheck size={11} strokeWidth={2.2} />
@@ -251,146 +284,138 @@ export function SettingsView({
                           </>
                         )}
                       </span>
-                    </td>
-                    <td>
-                      <div className="kind-chip-row">
-                        {i.sensorKinds.length === 0 ? (
-                          <span className="muted">-</span>
-                        ) : (
-                          i.sensorKinds.map((k) => (
-                            <span key={k} className="kind-chip">
-                              {SENSOR_KIND_DEFS[k]?.label ?? k}
-                            </span>
-                          ))
-                        )}
-                      </div>
-                    </td>
-                    <td>
+                    </div>
+                    <span className="template-list-summary">
+                      取扱種別:{' '}
+                      {i.sensorKinds.length === 0
+                        ? '—'
+                        : i.sensorKinds
+                            .map((k) => SENSOR_KIND_DEFS[k]?.label ?? k)
+                            .join(', ')}
+                      {' ・ '}
+                      シークレット:{' '}
                       <span className="mono">
                         {i.webhookSecret
                           ? `${i.webhookSecret.slice(0, 6)}…`
-                          : '-'}
+                          : '未設定'}
                       </span>
-                    </td>
-                    <td className="row-actions" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() =>
-                          setIntegrationDialog({ open: true, initial: i })
-                        }
-                      >
-                        <Pencil size={13} />
-                        <span>設定</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </span>
+                  </div>
+                  <div className="template-list-actions">
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label="設定"
+                      onClick={() =>
+                        setIntegrationDialog({ open: true, initial: i })
+                      }
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
 
       {tab === 'notifications' && (
         <section className="panel-card">
           <div className="panel-card-head">
-            <h2>通知グループ</h2>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => setGroupDialog({ open: true, initial: null })}
-            >
-              <Plus size={14} />
-              <span>新規作成</span>
-            </button>
+            <h2>
+              <Bell size={16} className="head-icon" />
+              通知グループ
+            </h2>
+            <div className="panel-card-meta">
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setGroupDialog({ open: true, initial: null })}
+              >
+                <Plus size={14} />
+                <span>新規作成</span>
+              </button>
+            </div>
           </div>
+          <p className="muted in-panel multiline-help">
+            <span>
+              逸脱・オフライン通知の送信先と送信タイミングをグループ化して管理できます。
+            </span>
+            <span>
+              各センサーのアラート設定から、どの通知グループを使うか選択できます。
+            </span>
+          </p>
 
           {groupList.length === 0 ? (
-            <div className="empty-state empty-state-compact">
-              <h3 className="empty-title">通知グループがありません</h3>
-              <p className="empty-desc">
-                逸脱・オフライン通知の送信先と送信タイミングをグループ化して管理できます。
-                <br />
-                各センサーのアラート設定からどの通知グループを使うか選択できます。
-              </p>
-              <div className="empty-actions">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => setGroupDialog({ open: true, initial: null })}
-                >
-                  <Plus size={16} />
-                  <span>最初の通知グループを作成</span>
-                </button>
-              </div>
-            </div>
+            <p className="muted in-panel">通知グループがまだありません。</p>
           ) : (
-            <div className="ng-grid">
+            <ul className="template-list">
               {groupList.map((g) => {
                 const linked = countByGroup(sensors, g.id)
                 return (
-                  <article key={g.id} className="ng-card">
-                    <header className="ng-card-head">
-                      <div>
-                        <h3>{g.name}</h3>
-                        {g.description && (
-                          <p className="ng-card-desc">{g.description}</p>
+                  <li key={g.id} className="template-list-item">
+                    <div className="template-list-main">
+                      <button
+                        type="button"
+                        className="template-list-name-btn"
+                        onClick={() =>
+                          setGroupDialog({ open: true, initial: g })
+                        }
+                        title="編集"
+                      >
+                        <Bell size={13} />
+                        <strong className="template-list-name">{g.name}</strong>
+                      </button>
+                      {g.description && (
+                        <span className="template-list-desc muted">
+                          {g.description}
+                        </span>
+                      )}
+                      <span className="template-list-summary">
+                        {NOTIFICATION_TIMING_LABELS[g.timing]} ・ 紐付き {linked} 台
+                      </span>
+                      <div className="template-list-channels">
+                        <span className="muted">送信先:</span>
+                        {g.channels.length === 0 ? (
+                          <span className="muted">未設定</span>
+                        ) : (
+                          g.channels.map((c) => (
+                            <ChannelBadge key={c.id} channel={c} />
+                          ))
                         )}
                       </div>
-                      <div className="ng-card-actions">
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          aria-label="編集"
-                          onClick={() =>
-                            setGroupDialog({ open: true, initial: g })
-                          }
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-btn icon-btn-danger"
-                          aria-label="削除"
-                          onClick={() => {
-                            if (
-                              confirm(`通知グループ「${g.name}」を削除しますか？`)
-                            ) {
-                              onDeleteNotificationGroup(g.id)
-                            }
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </header>
-
-                    <dl className="ng-card-meta">
-                      <div>
-                        <dt>送信タイミング</dt>
-                        <dd>{NOTIFICATION_TIMING_LABELS[g.timing]}</dd>
-                      </div>
-                      <div>
-                        <dt>紐付くセンサー</dt>
-                        <dd>{linked} 台</dd>
-                      </div>
-                    </dl>
-
-                    <div className="ng-channels">
-                      <span className="muted">送信先:</span>
-                      {g.channels.length === 0 ? (
-                        <span className="muted">未設定</span>
-                      ) : (
-                        g.channels.map((c) => (
-                          <ChannelBadge key={c.id} channel={c} />
-                        ))
-                      )}
                     </div>
-                  </article>
+                    <div className="template-list-actions">
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label="編集"
+                        onClick={() =>
+                          setGroupDialog({ open: true, initial: g })
+                        }
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn icon-btn-danger"
+                        aria-label="削除"
+                        onClick={() => {
+                          if (
+                            confirm(`通知グループ「${g.name}」を削除しますか？`)
+                          ) {
+                            onDeleteNotificationGroup(g.id)
+                          }
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </li>
                 )
               })}
-            </div>
+            </ul>
           )}
         </section>
       )}
@@ -499,23 +524,37 @@ export function SettingsView({
               ミテルデで取り扱える対象デバイスの一覧です。今後随時追加していきます。
             </span>
           </div>
+          <p className="muted in-panel">
+            別メーカーのセンサーとゲートウェイを混在させることはできません。
+            導入時はメーカー単位で組み合わせてください。
+          </p>
 
-          {DEVICE_CATEGORY_DEFS.map((cat) => {
-            const list = devicesByCategory(cat.key)
+          {MANUFACTURERS.map((m) => {
+            const list = devicesByManufacturer(m.key)
             if (list.length === 0) return null
             return (
-              <div key={cat.key} className="supported-device-section">
-                <h3 className="supported-device-section-title">
-                  {cat.key === 'sensor' ? (
-                    <Cpu size={14} />
-                  ) : (
-                    <RouterIcon size={14} />
+              <div key={m.key} className="manufacturer-section">
+                <header className="manufacturer-section-head">
+                  <div className="manufacturer-section-title-row">
+                    <h3 className="manufacturer-section-name">{m.name}</h3>
+                    {m.supported ? (
+                      <span className="supported-device-badge supported-device-badge-active">
+                        <CheckCircle2 size={11} strokeWidth={2.4} />
+                        対応中
+                      </span>
+                    ) : (
+                      <span className="supported-device-badge supported-device-badge-future">
+                        <Clock size={11} strokeWidth={2.4} />
+                        対応予定
+                      </span>
+                    )}
+                  </div>
+                  {m.description && (
+                    <p className="manufacturer-section-desc muted">
+                      {m.description}
+                    </p>
                   )}
-                  <span>{cat.label}</span>
-                  <span className="muted supported-device-section-desc">
-                    {cat.description}
-                  </span>
-                </h3>
+                </header>
                 <div className="supported-device-grid">
                   {list.map((d) => (
                     <DeviceCard key={d.id} device={d} />
