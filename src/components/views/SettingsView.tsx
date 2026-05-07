@@ -71,6 +71,8 @@ type Props = {
   dashboards: DashboardStore
   onUpsertDashboardReminder: (r: DashboardReminder) => void
   onDeleteDashboardReminder: (id: string) => void
+  /** 外部から特定タブで開きたい場合に指定（例: センサー一括操作から「閾値テンプレート」へ） */
+  initialTab?: Tab
 }
 
 type Tab = 'integrations' | 'notifications' | 'thresholds' | 'devices'
@@ -212,8 +214,9 @@ export function SettingsView({
   dashboards,
   onUpsertDashboardReminder,
   onDeleteDashboardReminder,
+  initialTab,
 }: Props) {
-  const [tab, setTab] = useState<Tab>('integrations')
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'integrations')
   const [thresholdEditDialog, setThresholdEditDialog] = useState<{
     open: boolean
     initial: ThresholdTemplate | null

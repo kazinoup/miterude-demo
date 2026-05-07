@@ -174,6 +174,12 @@ export default function App() {
   const [view, setView] = useState<ViewKey>('dashboard')
   const [activeSensorId, setActiveSensorId] = useState<string | null>(null)
   const [activeGatewayId, setActiveGatewayId] = useState<string | null>(null)
+  /** 設定画面を特定タブで開くためのヒント。
+   *  navigate('settings') 直前に setSettingsInitialTab で指定し、
+   *  SettingsView マウント時の初期タブとして消費する。 */
+  const [settingsInitialTab, setSettingsInitialTab] = useState<
+    'integrations' | 'notifications' | 'thresholds' | 'devices' | undefined
+  >(undefined)
 
   // Phase 9.11: 共通 ReportThresholds は廃止。閾値はセンサー個別 (sensor.thresholds) で管理。
   // Phase A-2 (Phase 10): 「欠損表示の設定」は撤去。未計測セルはハイフン固定。
@@ -788,6 +794,8 @@ export default function App() {
     setView(next)
     if (next !== 'sensor-detail') setActiveSensorId(null)
     if (next !== 'gateway-detail') setActiveGatewayId(null)
+    // 設定画面以外へ遷移したら、次回の設定画面オープンは既定タブに戻す
+    if (next !== 'settings') setSettingsInitialTab(undefined)
   }
 
   function gotoReport(deviceId?: string, ym?: YearMonth) {
@@ -1030,6 +1038,10 @@ export default function App() {
               onApplyBulkGroup={handleApplyBulkGroup}
               onApplyBulkCategory={handleApplyBulkCategory}
               onApplyBulkThresholds={handleApplyBulkThresholds}
+              onGoToThresholdTemplates={() => {
+                setSettingsInitialTab('thresholds')
+                navigate('settings')
+              }}
             />
           )}
 
@@ -1102,6 +1114,7 @@ export default function App() {
               dashboards={dashboards}
               onUpsertDashboardReminder={handleUpsertDashboardReminder}
               onDeleteDashboardReminder={handleDeleteDashboardReminder}
+              initialTab={settingsInitialTab}
             />
           )}
 

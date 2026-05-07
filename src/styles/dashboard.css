@@ -2766,6 +2766,28 @@
   max-width: 480px;
 }
 
+/* form-row 内でラベルと右側のリンクを横並びにする */
+.form-label-with-link {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+
+.form-label-with-link .form-label {
+  margin-bottom: 0;
+}
+
+.form-label-with-link .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--navy-700);
+  font-weight: 600;
+}
+
 /* Phase: センサー一括操作ダイアログ — 左ナビ + 右設定の 2 ペイン構成 */
 .app-dialog-bulk {
   max-width: 760px;

@@ -90,6 +90,8 @@ type Props = {
     ids: string[],
     thresholds: SensorThresholds | undefined,
   ) => void
+  /** 一括操作ダイアログから「閾値テンプレートを管理」リンクで使う */
+  onGoToThresholdTemplates: () => void
 }
 
 type SensorRow = {
@@ -592,6 +594,7 @@ export function SensorsView({
   onApplyBulkGroup,
   onApplyBulkCategory,
   onApplyBulkThresholds,
+  onGoToThresholdTemplates,
 }: Props) {
   const sensorList = useMemo(
     () => Object.values(sensors).sort((a, b) => a.id.localeCompare(b.id)),
@@ -1062,6 +1065,7 @@ export function SensorsView({
         existingTags={allTagsList}
         onClose={() => setBulkActionOpen(false)}
         onApply={handleBulkAction}
+        onGoToThresholdTemplates={onGoToThresholdTemplates}
       />
 
       <SensorColumnSettingsDialog

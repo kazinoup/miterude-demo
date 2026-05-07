@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Tag, Folder, Tags, Trash2, Sliders, FileText } from 'lucide-react'
+import {
+  X,
+  Tag,
+  Folder,
+  Tags,
+  Trash2,
+  Sliders,
+  FileText,
+  ExternalLink,
+} from 'lucide-react'
 import type {
   SensorCategoryStore,
   SensorGroupStore,
   SensorThresholds,
-  TempHumidityThresholds,
   ThresholdTemplateStore,
 } from '../types'
 import { normalizeTag } from '../lib/groups'
-import {
-  TempHumidityThresholdsEditor,
-  emptyTempHumidityThresholds,
-} from './ThresholdValuesEditor'
 
 type Action =
   | { kind: 'tag-add'; tags: string[] }
@@ -31,6 +35,9 @@ type Props = {
   existingTags: string[]
   onClose: () => void
   onApply: (action: Action) => void
+  /** 閾値テンプレートの管理画面（設定 → 閾値テンプレート）へ遷移する。
+   *  ダイアログ内の「テンプレートを管理する」リンクから呼ばれる。 */
+  onGoToThresholdTemplates: () => void
 }
 
 type Mode =
@@ -49,18 +56,17 @@ export function SensorBulkActionsDialog({
   existingTags,
   onClose,
   onApply,
+  onGoToThresholdTemplates,
 }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
   const [mode, setMode] = useState<Mode>('tag-add')
   const [tagsInput, setTagsInput] = useState('')
   const [groupId, setGroupId] = useState<string>('')
   const [categoryId, setCategoryId] = useState<string>('')
-  // Phase 9.14: 閾値一括変更
+  // Phase 9.14: 閾値一括変更（テンプレートから / 閾値をクリア の 2 択）
   const [thresholdSource, setThresholdSource] =
-    useState<'template' | 'direct' | 'clear'>('template')
+    useState<'template' | 'clear'>('template')
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
-  const [directThresholds, setDirectThresholds] =
-    useState<TempHumidityThresholds>(emptyTempHumidityThresholds())
 
   useEffect(() => {
     if (!open) return
@@ -70,7 +76,6 @@ export function SensorBulkActionsDialog({
     setCategoryId('')
     setThresholdSource('template')
     setSelectedTemplateId('')
-    setDirectThresholds(emptyTempHumidityThresholds())
   }, [open])
 
   useEffect(() => {
@@ -100,22 +105,17 @@ export function SensorBulkActionsDialog({
     } else if (mode === 'category-set') {
       onApply({ kind: 'category-set', categoryId: categoryId || null })
     } else {
-      // threshold-set
+      // threshold-set: テンプレートから / 閾値をクリア の 2 択
       if (thresholdSource === 'clear') {
         onApply({ kind: 'threshold-set', thresholds: undefined })
         return
       }
-      if (thresholdSource === 'template') {
-        const t = templateList.find((x) => x.id === selectedTemplateId)
-        if (!t) {
-          alert('テンプレートを選択してください。')
-          return
-        }
-        onApply({ kind: 'threshold-set', thresholds: t.thresholds })
+      const t = templateList.find((x) => x.id === selectedTemplateId)
+      if (!t) {
+        alert('テンプレートを選択してください。')
         return
       }
-      // direct
-      onApply({ kind: 'threshold-set', thresholds: directThresholds })
+      onApply({ kind: 'threshold-set', thresholds: t.thresholds })
     }
   }
 
@@ -264,13 +264,6 @@ export function SensorBulkActionsDialog({
                     </button>
                     <button
                       type="button"
-                      className={`seg-toggle-btn ${thresholdSource === 'direct' ? 'is-active' : ''}`}
-                      onClick={() => setThresholdSource('direct')}
-                    >
-                      <Sliders size={13} /> 直接入力
-                    </button>
-                    <button
-                      type="button"
                       className={`seg-toggle-btn ${thresholdSource === 'clear' ? 'is-active' : ''}`}
                       onClick={() => setThresholdSource('clear')}
                     >
@@ -281,12 +274,27 @@ export function SensorBulkActionsDialog({
 
                 {thresholdSource === 'template' && (
                   <div className="form-row">
-                    <label className="form-label" htmlFor="bulk-threshold-template">
-                      テンプレート
-                    </label>
+                    <div className="form-label-with-link">
+                      <label className="form-label" htmlFor="bulk-threshold-template">
+                        テンプレート
+                      </label>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => {
+                          onClose()
+                          onGoToThresholdTemplates()
+                        }}
+                        title="設定画面の閾値テンプレート管理を開く"
+                      >
+                        <Sliders size={11} />
+                        テンプレートを管理する
+                        <ExternalLink size={10} />
+                      </button>
+                    </div>
                     {templateList.length === 0 ? (
                       <p className="muted in-panel">
-                        テンプレートがありません。「設定 → 閾値テンプレート」で作成してください。
+                        テンプレートがありません。上のリンクから「設定 → 閾値テンプレート」で作成してください。
                       </p>
                     ) : (
                       <select
@@ -304,18 +312,6 @@ export function SensorBulkActionsDialog({
                         ))}
                       </select>
                     )}
-                  </div>
-                )}
-
-                {thresholdSource === 'direct' && (
-                  <div className="form-row">
-                    <span className="form-label">閾値の値</span>
-                    <div className="bulk-threshold-direct">
-                      <TempHumidityThresholdsEditor
-                        value={directThresholds}
-                        onChange={setDirectThresholds}
-                      />
-                    </div>
                   </div>
                 )}
 
