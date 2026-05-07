@@ -684,6 +684,15 @@ export type AlertLogEntry = {
   value?: number
   /** ユーザ向け 1 行説明（例: "温度 -5.3℃ が下限 -5.0℃ を下回りました"） */
   message: string
+  /** ダッシュボード確認記録から連携されたメモ。
+   *  DashboardCheckin の sensorComments / segmentComments を作成すると、
+   *  対象期間に該当する AlertLog エントリへ書き戻される。
+   *  最新の確認が上書きする方式（履歴を残す場合は別フィールド検討）。 */
+  confirmComment?: string
+  /** 確認メモを書いた人の名前（スナップショット） */
+  confirmedBy?: string
+  /** 確認メモが書かれた日時 */
+  confirmedAt?: Date
 }
 
 export type AlertLogStore = Record<string, AlertLogEntry>

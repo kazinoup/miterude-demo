@@ -488,6 +488,49 @@ export default function App() {
 
   function handleCreateCheckin(c: DashboardCheckin) {
     setCheckins((prev) => upsertCheckin(prev, c))
+    // Phase: 確認記録のセンサーコメントを、対象期間に該当するアラートログに書き戻す。
+    //   AlertLog.confirmComment / confirmedBy / confirmedAt を上書きする
+    //   （最新の確認が常に上書き）。
+    if (c.sensorComments.length > 0) {
+      const rangeStart = c.snapshot.rangeStart
+      const rangeEnd = c.snapshot.rangeEnd
+      // 範囲が定義されていない（古いデータ）場合は lookbackHours で逆算
+      const fallbackStart = !rangeStart
+        ? new Date(c.timestamp.getTime() - c.snapshot.lookbackHours * 3600_000)
+        : null
+      const start = (rangeStart ?? fallbackStart ?? c.timestamp).getTime()
+      const end = (rangeEnd ?? c.timestamp).getTime()
+
+      // sensorId → comment（空コメントは無視）
+      const commentBySensor = new Map<string, string>()
+      for (const sc of c.sensorComments) {
+        const text = (sc.comment ?? '').trim()
+        if (text) commentBySensor.set(sc.sensorId, text)
+      }
+      if (commentBySensor.size > 0) {
+        setAlertLogs((prev) => {
+          let dirty = false
+          const next: typeof prev = { ...prev }
+          for (const [id, e] of Object.entries(prev)) {
+            const memo = commentBySensor.get(e.targetId)
+            if (!memo) continue
+            const t =
+              e.occurredAt instanceof Date
+                ? e.occurredAt.getTime()
+                : new Date(e.occurredAt as unknown as string).getTime()
+            if (t < start || t > end) continue
+            next[id] = {
+              ...e,
+              confirmComment: memo,
+              confirmedBy: c.userName,
+              confirmedAt: c.timestamp,
+            }
+            dirty = true
+          }
+          return dirty ? next : prev
+        })
+      }
+    }
     toast(
       c.snapshot.deviationSensorCount > 0
         ? `${c.dashboardName} を確認しました（逸脱 ${c.snapshot.deviationSensorCount} 件にメモを残しました）`

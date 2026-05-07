@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Filter as FilterIcon,
   CheckSquare,
+  Settings2,
 } from 'lucide-react'
 import type {
   AlertLogEntry,
@@ -38,6 +39,16 @@ import { fromDateInputValue, toDateInputValue } from '../../lib/period'
 import { isEmptyConditions, sensorMatches } from '../../lib/groups'
 import { SensorPicker } from '../SensorPicker'
 import { SensorFilterPanel } from '../SensorFilterPanel'
+import { AlertColumnSettingsDialog } from '../AlertColumnSettingsDialog'
+import {
+  ALERT_COLUMN_DEFS,
+  loadColumnOrder as loadAlertColumnOrder,
+  loadColumnVisibility as loadAlertColumnVisibility,
+  saveColumnOrder as saveAlertColumnOrder,
+  saveColumnVisibility as saveAlertColumnVisibility,
+  type AlertColumnKey,
+  type AlertColumnVisibility,
+} from '../../lib/alertColumns'
 
 type Props = {
   alertLogs: AlertLogStore
@@ -113,6 +124,26 @@ export function AlertsView({
   const [toDate, setToDate] = useState<string>('')
 
   const [page, setPage] = useState(0)
+
+  /** 列の表示・並び順設定 */
+  const [columnVisibility, setColumnVisibility] =
+    useState<AlertColumnVisibility>(() => loadAlertColumnVisibility())
+  useEffect(() => {
+    saveAlertColumnVisibility(columnVisibility)
+  }, [columnVisibility])
+  const [columnOrder, setColumnOrder] = useState<AlertColumnKey[]>(() =>
+    loadAlertColumnOrder(),
+  )
+  useEffect(() => {
+    saveAlertColumnOrder(columnOrder)
+  }, [columnOrder])
+  const [columnSettingsOpen, setColumnSettingsOpen] = useState(false)
+
+  const ALERT_DEFS_MAP = useMemo(
+    () => Object.fromEntries(ALERT_COLUMN_DEFS.map((d) => [d.key, d])),
+    [],
+  )
+  const visibleColumns = columnOrder.filter((k) => columnVisibility[k])
 
   // フィルタ条件が変わったら 1 ページ目に戻す
   useEffect(() => {
@@ -237,6 +268,16 @@ export function AlertsView({
           <p>
             センサー・ゲートウェイで発生したアラートの蓄積ログ。通知のまとめ送信はここから期間でまとめて送られます。
           </p>
+        </div>
+        <div className="view-header-actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setColumnSettingsOpen(true)}
+          >
+            <Settings2 size={14} />
+            <span>表示設定</span>
+          </button>
         </div>
       </header>
 
@@ -372,7 +413,7 @@ export function AlertsView({
         </div>
       </section>
 
-      {/* ===== グリッド ===== */}
+      {/* ===== グリッド（列カスタマイズ対応） ===== */}
       <section className="panel-card alerts-grid-card">
         {pageEntries.length === 0 ? (
           <p className="muted in-panel">
@@ -383,51 +424,103 @@ export function AlertsView({
             <thead>
               <tr>
                 <th className="col-time">発生日時</th>
-                <th className="col-target">対象デバイス</th>
-                <th className="col-kind">種別</th>
-                <th className="col-message">内容</th>
+                {visibleColumns.map((key) => {
+                  const def = ALERT_DEFS_MAP[key]
+                  if (!def) return null
+                  return <th key={key}>{def.label}</th>
+                })}
               </tr>
             </thead>
             <tbody>
               {pageEntries.map((e) => {
                 const Icon = kindIcon(e.kind)
+                const sensor =
+                  e.targetKind === 'sensor' ? sensors[e.targetId] : undefined
+                const category =
+                  sensor?.categoryId
+                    ? sensorCategories[sensor.categoryId]
+                    : undefined
+                const group =
+                  sensor?.groupId ? sensorGroups[sensor.groupId] : undefined
                 return (
                   <tr key={e.id}>
-                    <td className="col-time">
-                      {formatDateTime(e.occurredAt)}
-                    </td>
-                    <td className="col-target">
-                      <div className="alerts-target-cell">
-                        <span
-                          className={`alerts-target-kind alerts-target-kind-${e.targetKind}`}
-                        >
-                          {e.targetKind === 'sensor'
-                            ? 'センサー'
-                            : 'ゲートウェイ'}
-                        </span>
-                        <span className="alerts-target-cell-name">
-                          {sensors[e.targetId]?.name ??
-                            gateways[e.targetId]?.name ??
-                            e.targetId}
-                        </span>
-                      </div>
-                      <div className="alerts-target-cell-meta muted">
-                        <span>
-                          {e.manufacturer} {e.model}
-                        </span>
-                        <span>S/N: {e.serialNumber}</span>
-                        {e.sensorNumber && <span>番号: {e.sensorNumber}</span>}
-                      </div>
-                    </td>
-                    <td className="col-kind">
-                      <span
-                        className={`alert-kind-badge alert-kind-badge-${e.kind}`}
-                      >
-                        <Icon size={11} strokeWidth={2.4} />
-                        {ALERT_LOG_KIND_LABELS[e.kind]}
-                      </span>
-                    </td>
-                    <td className="col-message">{e.message}</td>
+                    <td className="col-time">{formatDateTime(e.occurredAt)}</td>
+                    {visibleColumns.map((key) => {
+                      switch (key) {
+                        case 'targetDevice':
+                          return (
+                            <td key={key}>
+                              <div className="alerts-target-cell">
+                                <span
+                                  className={`alerts-target-kind alerts-target-kind-${e.targetKind}`}
+                                >
+                                  {e.targetKind === 'sensor'
+                                    ? 'センサー'
+                                    : 'ゲートウェイ'}
+                                </span>
+                                <span className="alerts-target-cell-name">
+                                  {sensors[e.targetId]?.name ??
+                                    gateways[e.targetId]?.name ??
+                                    e.targetId}
+                                </span>
+                              </div>
+                            </td>
+                          )
+                        case 'kind':
+                          return (
+                            <td key={key}>
+                              <span
+                                className={`alert-kind-badge alert-kind-badge-${e.kind}`}
+                              >
+                                <Icon size={11} strokeWidth={2.4} />
+                                {ALERT_LOG_KIND_LABELS[e.kind]}
+                              </span>
+                            </td>
+                          )
+                        case 'message':
+                          return <td key={key}>{e.message}</td>
+                        case 'category':
+                          return (
+                            <td key={key}>
+                              {category ? category.name : '—'}
+                            </td>
+                          )
+                        case 'group':
+                          return (
+                            <td key={key}>{group ? group.name : '—'}</td>
+                          )
+                        case 'tags':
+                          return (
+                            <td key={key}>
+                              {sensor?.tags && sensor.tags.length > 0
+                                ? sensor.tags.join(', ')
+                                : '—'}
+                            </td>
+                          )
+                        case 'confirmComment':
+                          return (
+                            <td key={key} className="cell-memo">
+                              {e.confirmComment || '—'}
+                            </td>
+                          )
+                        case 'manufacturer':
+                          return <td key={key}>{e.manufacturer}</td>
+                        case 'model':
+                          return <td key={key}>{e.model}</td>
+                        case 'serialNumber':
+                          return (
+                            <td key={key}>
+                              <span className="mono">{e.serialNumber}</span>
+                            </td>
+                          )
+                        case 'sensorNumber':
+                          return (
+                            <td key={key}>{e.sensorNumber ?? '—'}</td>
+                          )
+                        default:
+                          return null
+                      }
+                    })}
                   </tr>
                 )
               })}
@@ -461,6 +554,15 @@ export function AlertsView({
           </div>
         )}
       </section>
+
+      <AlertColumnSettingsDialog
+        open={columnSettingsOpen}
+        visibility={columnVisibility}
+        onChange={setColumnVisibility}
+        order={columnOrder}
+        onOrderChange={setColumnOrder}
+        onClose={() => setColumnSettingsOpen(false)}
+      />
     </div>
   )
 }
