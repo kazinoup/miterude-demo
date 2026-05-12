@@ -364,10 +364,10 @@ export function AdminDashboardView({
             <Building2 size={20} />
           </div>
           <div className="admin-dash-stat-body">
-            <div className="admin-dash-stat-label">テナント</div>
-            <div className="admin-dash-stat-value">{stats.tenantCount}</div>
+            <div className="admin-dash-stat-label">稼働中テナント</div>
+            <div className="admin-dash-stat-value">{stats.activeTenants}</div>
             <div className="admin-dash-stat-sub muted">
-              稼働 {stats.activeTenants}
+              全 {stats.tenantCount}
               {stats.deactivatedTenants > 0 && ` ・ 無効化 ${stats.deactivatedTenants}`}
             </div>
           </div>
