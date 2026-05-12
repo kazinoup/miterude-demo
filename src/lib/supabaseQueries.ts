@@ -79,12 +79,37 @@ export type SupabaseDeviceRow = {
     | null
 }
 
+/** Supabase REST (PostgREST) は `max_rows` 既定値 1000 で返却を頭打ちにする。
+ *  全件取得が必要な箇所は本ヘルパで `.range()` を 1000 件ずつ回す。
+ *
+ *  build には .range() より前までのクエリビルダを返す関数を渡す。 */
+type PostgrestResp<T> = PromiseLike<{ data: T[] | null; error: unknown }>
+async function fetchAllPaged<T>(
+  build: () => { range: (from: number, to: number) => PostgrestResp<T> },
+): Promise<T[]> {
+  const PAGE = 1000
+  const out: T[] = []
+  let offset = 0
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { data, error } = await build().range(offset, offset + PAGE - 1)
+    if (error) throw error
+    const rows = (data ?? []) as T[]
+    for (const r of rows) out.push(r)
+    if (rows.length < PAGE) break
+    offset += PAGE
+  }
+  return out
+}
+
 /** devices + sensor_props を JOIN して、デモ組織のセンサー一覧を取得する。 */
 export async function fetchSensorDevices(): Promise<SupabaseDeviceRow[]> {
-  const { data, error } = await supabase
-    .from('devices')
-    .select(
-      `
+  // PostgREST max_rows=1000 を超える可能性に備えてページング。
+  const rows = await fetchAllPaged<unknown>(() =>
+    supabase
+      .from('devices')
+      .select(
+        `
       id, device_type, role, manufacturer, model, external_key,
       serial_number, dev_eui, name, device_number,
       category_id, group_id, tags, notification_group_id,
@@ -94,15 +119,13 @@ export async function fetchSensorDevices(): Promise<SupabaseDeviceRow[]> {
         exclusion_windows, exclusion_dates, updated_at
       )
     `,
-    )
-    .eq('organization_id', getActiveOrgId())
-    .eq('device_type', 'sensor')
-    .order('device_number', { ascending: true })
-
-  if (error) throw error
+      )
+      .eq('organization_id', getActiveOrgId())
+      .eq('device_type', 'sensor')
+      .order('device_number', { ascending: true }),
+  )
   // PostgREST は埋め込みリレーションを常に配列で型推論するため、unknown 経由でキャスト。
-  // 実体は sensor_props!sensor_props_device_id_fkey の 1:1 で単一オブジェクト。
-  return (data ?? []) as unknown as SupabaseDeviceRow[]
+  return rows as unknown as SupabaseDeviceRow[]
 }
 
 /** sensor_id ごとの「最新計測値」をまとめて取得する。
@@ -1169,24 +1192,26 @@ const DEFAULT_GATEWAY_ALERT_SETTINGS: GatewayAlertSettings = {
 }
 
 export async function fetchGatewaysAsStore(): Promise<GatewayStore> {
-  const { data, error } = await supabase
-    .from('devices')
-    .select(
-      `
+  // PostgREST max_rows=1000 を超える可能性に備えてページング。
+  const rows = await fetchAllPaged<unknown>(() =>
+    supabase
+      .from('devices')
+      .select(
+        `
       id, device_type, role, manufacturer, model, external_key,
       serial_number, dev_eui, name, device_number,
       category_id, group_id, tags, notification_group_id,
       online, last_seen_at, registered_at,
       gateway_props ( alert_settings, exclusion_windows, exclusion_dates, updated_at )
     `,
-    )
-    .eq('organization_id', getActiveOrgId())
-    .eq('device_type', 'gateway')
-    .order('device_number', { ascending: true })
-  if (error) throw error
+      )
+      .eq('organization_id', getActiveOrgId())
+      .eq('device_type', 'gateway')
+      .order('device_number', { ascending: true }),
+  )
 
   const store: GatewayStore = {}
-  for (const r of (data ?? []) as unknown as SupabaseGatewayDeviceRow[]) {
+  for (const r of rows as unknown as SupabaseGatewayDeviceRow[]) {
     const props = r.gateway_props
     const alertSettings = props?.alert_settings ?? DEFAULT_GATEWAY_ALERT_SETTINGS
     const exclusionWindows = props?.exclusion_windows
@@ -1331,16 +1356,18 @@ function asNoteCategory(c: string): SensorNoteCategory {
 }
 
 export async function fetchSensorNotesAsStore(): Promise<SensorNoteStore> {
-  const { data, error } = await supabase
-    .from('sensor_notes')
-    .select(
-      'id, sensor_id, sensor_name_snapshot, author_id, author_name, body, category, approval, timestamp',
-    )
-    .eq('organization_id', getActiveOrgId())
-    .order('timestamp', { ascending: false })
-  if (error) throw error
+  // PostgREST max_rows=1000 を超える可能性に備えてページング。
+  const rows = await fetchAllPaged<SupabaseSensorNoteRow>(() =>
+    supabase
+      .from('sensor_notes')
+      .select(
+        'id, sensor_id, sensor_name_snapshot, author_id, author_name, body, category, approval, timestamp',
+      )
+      .eq('organization_id', getActiveOrgId())
+      .order('timestamp', { ascending: false }),
+  )
   const store: SensorNoteStore = {}
-  for (const r of (data ?? []) as SupabaseSensorNoteRow[]) {
+  for (const r of rows) {
     const note: SensorNote = {
       id: r.id,
       sensorId: r.sensor_id ?? '',
@@ -1421,16 +1448,18 @@ type SupabaseAlertLogRow = {
 }
 
 export async function fetchAlertLogsAsStore(): Promise<AlertLogStore> {
-  const { data, error } = await supabase
-    .from('alert_logs')
-    .select(
-      'id, occurred_at, target_kind, target_id, manufacturer, model, serial_number, sensor_number, kind, metric, value, message, session_id, re_alert_index, confirm_comment, confirmed_by, confirmed_at',
-    )
-    .eq('organization_id', getActiveOrgId())
-    .order('occurred_at', { ascending: false })
-  if (error) throw error
+  // PostgREST max_rows=1000 を超える可能性に備えてページング。
+  const rows = await fetchAllPaged<SupabaseAlertLogRow>(() =>
+    supabase
+      .from('alert_logs')
+      .select(
+        'id, occurred_at, target_kind, target_id, manufacturer, model, serial_number, sensor_number, kind, metric, value, message, session_id, re_alert_index, confirm_comment, confirmed_by, confirmed_at',
+      )
+      .eq('organization_id', getActiveOrgId())
+      .order('occurred_at', { ascending: false }),
+  )
   const store: AlertLogStore = {}
-  for (const r of (data ?? []) as SupabaseAlertLogRow[]) {
+  for (const r of rows) {
     const entry: AlertLogEntry = {
       id: r.id,
       occurredAt: new Date(r.occurred_at),
@@ -1507,16 +1536,18 @@ type SupabaseCheckinRow = {
 }
 
 export async function fetchCheckinsAsStore(): Promise<DashboardCheckinStore> {
-  const { data, error } = await supabase
-    .from('dashboard_checkins')
-    .select(
-      'id, dashboard_id, dashboard_name_snapshot, user_id, user_name, timestamp, status, comment, sensor_comments, snapshot, approval',
-    )
-    .eq('organization_id', getActiveOrgId())
-    .order('timestamp', { ascending: false })
-  if (error) throw error
+  // PostgREST max_rows=1000 を超える可能性に備えてページング。
+  const rows = await fetchAllPaged<SupabaseCheckinRow>(() =>
+    supabase
+      .from('dashboard_checkins')
+      .select(
+        'id, dashboard_id, dashboard_name_snapshot, user_id, user_name, timestamp, status, comment, sensor_comments, snapshot, approval',
+      )
+      .eq('organization_id', getActiveOrgId())
+      .order('timestamp', { ascending: false }),
+  )
   const store: DashboardCheckinStore = {}
-  for (const r of (data ?? []) as SupabaseCheckinRow[]) {
+  for (const r of rows) {
     const snap = r.snapshot ?? {
       sensorCount: 0, onlineCount: 0, deviationSensorCount: 0, lookbackHours: 0,
     }
