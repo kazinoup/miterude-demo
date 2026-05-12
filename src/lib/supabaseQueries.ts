@@ -296,37 +296,47 @@ type SupabaseReadingRow = {
 }
 
 /** 過去 N 日間の sensor_readings を取得して、DeviceStore（センサーごとの配列）に変換する。
- *  DashboardView のタイル / 折れ線チャートが直接これを読む。 */
+ *  DashboardView のタイル / 折れ線チャートが直接これを読む。
+ *
+ *  注意: Supabase REST (PostgREST) の `max_rows` 既定値が 1000 のため、
+ *  `.limit(20000)` のような大きな値を指定しても 1000 件で打ち切られる。
+ *  さらに `order asc` のため、件数超過時は「古い 1000 件」が返り、最新が落ちる。
+ *  ここでは `range()` を使って 1000 件ずつページングし、全件を確実に取得する。 */
 export async function fetchReadingsAsDeviceStore(opts: {
   sinceDays?: number
-  limit?: number
 } = {}): Promise<DeviceStore> {
   const sinceDays = opts.sinceDays ?? 30
-  const limit = opts.limit ?? 20000
   const sinceIso = new Date(Date.now() - sinceDays * 86_400_000).toISOString()
+  const orgId = getActiveOrgId()
 
-  const { data, error } = await supabase
-    .from('sensor_readings')
-    .select('sensor_id, measured_at, temperature, humidity, battery')
-    .eq('organization_id', getActiveOrgId())
-    .gte('measured_at', sinceIso)
-    .order('measured_at', { ascending: true })
-    .limit(limit)
-
-  if (error) throw error
-
+  const PAGE = 1000
   const store: DeviceStore = {}
-  for (const r of (data ?? []) as SupabaseReadingRow[]) {
-    if (r.temperature == null && r.humidity == null) continue
-    const reading: SensorReading = {
-      deviceId: r.sensor_id,
-      measuredAt: new Date(r.measured_at),
-      temperature: r.temperature ?? NaN,
-      humidity: r.humidity ?? NaN,
-      battery: r.battery ?? undefined,
+  let offset = 0
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { data, error } = await supabase
+      .from('sensor_readings')
+      .select('sensor_id, measured_at, temperature, humidity, battery')
+      .eq('organization_id', orgId)
+      .gte('measured_at', sinceIso)
+      .order('measured_at', { ascending: true })
+      .range(offset, offset + PAGE - 1)
+    if (error) throw error
+    const rows = (data ?? []) as SupabaseReadingRow[]
+    for (const r of rows) {
+      if (r.temperature == null && r.humidity == null) continue
+      const reading: SensorReading = {
+        deviceId: r.sensor_id,
+        measuredAt: new Date(r.measured_at),
+        temperature: r.temperature ?? NaN,
+        humidity: r.humidity ?? NaN,
+        battery: r.battery ?? undefined,
+      }
+      if (!store[r.sensor_id]) store[r.sensor_id] = []
+      store[r.sensor_id].push(reading)
     }
-    if (!store[r.sensor_id]) store[r.sensor_id] = []
-    store[r.sensor_id].push(reading)
+    if (rows.length < PAGE) break
+    offset += PAGE
   }
   return store
 }
