@@ -1160,6 +1160,13 @@
   padding-top: 56px;
 }
 
+/* モバイルではバナーが薄くなる分マージンも詰める */
+@media (max-width: 720px) {
+  .app-shell.has-impersonation-banner {
+    padding-top: 40px;
+  }
+}
+
 .impersonation-banner-icon {
   display: inline-flex;
   align-items: center;
@@ -1231,6 +1238,47 @@
 
 .impersonation-banner-end:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* モバイル: バナーを 1 行に詰め、余分な情報を畳む */
+@media (max-width: 720px) {
+  .impersonation-banner {
+    padding: 0.45rem 0.7rem;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+  }
+  .impersonation-banner-icon {
+    width: 1.6rem;
+    height: 1.6rem;
+  }
+  .impersonation-banner-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+  .impersonation-banner-title {
+    font-size: 0.82rem;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+  .impersonation-banner-meta {
+    font-size: 0.7rem;
+    /* 長くなりがちな (email) と "→ org" を改行可能に */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .impersonation-banner-detail {
+    /* 理由 + 残り時間は省略（スペース節約） */
+    display: none;
+  }
+  .impersonation-banner-end {
+    padding: 0.3rem 0.55rem;
+    font-size: 0.72rem;
+  }
+  .impersonation-banner-end svg {
+    width: 12px;
+    height: 12px;
+  }
 }
 
 /* =====================================================
