@@ -113,6 +113,42 @@ export function SensorAlertSettings({
                 ))}
               </div>
             </div>
+
+            {/* Phase 1.11: オフラインアラートの再アラート設定 */}
+            <div className="alert-row alert-row-sub">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  disabled={!value.offlineEnabled}
+                  checked={Boolean(value.offlineReAlertEnabled)}
+                  onChange={(e) =>
+                    update('offlineReAlertEnabled', e.target.checked)
+                  }
+                />
+                <span>オフラインが継続しているとき再アラートを発火する</span>
+              </label>
+              <div className="num-input-row">
+                <span className="row-label-inline">間隔</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={24}
+                  step={1}
+                  disabled={!value.offlineEnabled || !value.offlineReAlertEnabled}
+                  value={value.offlineReAlertHours ?? 6}
+                  onChange={(e) =>
+                    update(
+                      'offlineReAlertHours',
+                      Math.max(1, Math.min(24, Number(e.target.value) || 6)),
+                    )
+                  }
+                />
+                <span className="num-input-suffix">時間ごと</span>
+              </div>
+              <p className="alert-help muted">
+                通信途絶が続いている間、指定した時間ごとに再アラートを発火します（最大 24 時間）。OFF の場合は同じ途絶期間中は 1 件のみ。
+              </p>
+            </div>
           </fieldset>
 
           <fieldset className="alert-fieldset">
@@ -245,6 +281,42 @@ export function SensorAlertSettings({
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Phase 1.11: バッテリーアラートの再アラート設定 */}
+              <div className="alert-row alert-row-sub">
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    disabled={!batteryEnabled}
+                    checked={Boolean(value.batteryReAlertEnabled)}
+                    onChange={(e) =>
+                      update('batteryReAlertEnabled', e.target.checked)
+                    }
+                  />
+                  <span>残量が下回ったままのとき再アラートを発火する</span>
+                </label>
+                <div className="num-input-row">
+                  <span className="row-label-inline">間隔</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    step={1}
+                    disabled={!batteryEnabled || !value.batteryReAlertEnabled}
+                    value={value.batteryReAlertHours ?? 6}
+                    onChange={(e) =>
+                      update(
+                        'batteryReAlertHours',
+                        Math.max(1, Math.min(24, Number(e.target.value) || 6)),
+                      )
+                    }
+                  />
+                  <span className="num-input-suffix">時間ごと</span>
+                </div>
+                <p className="alert-help muted">
+                  バッテリー残量がしきい値を下回り続けている間、指定した時間ごとに再アラートを発火します（最大 24 時間）。OFF の場合は最初に下回ったときのみ。
+                </p>
               </div>
             </fieldset>
           )}

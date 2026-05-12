@@ -499,11 +499,11 @@ export type AlertSettings = {
   deviationEnabled: boolean
   /** 何回連続で「危険」逸脱したら通知するか */
   deviationConsecutiveCount: number
-  /** Phase 1.3a: 同セッション継続中の再アラート設定。
+  /** Phase 1.3a: 連続逸脱アラートの同セッション継続中の再アラート設定。
    *  - false (既定): セッション内で 1 回のみ発火、回復するまで再発火しない
    *  - true: reAlertHours 経過するごとに再発火 */
   reAlertEnabled?: boolean
-  /** 再アラートを発火させるまでの時間（時間単位、1〜24）。既定 6 */
+  /** 連続逸脱アラートの再アラート間隔（時間単位、1〜24）。既定 6 */
   reAlertHours?: number
   /** 通知チャンネル */
   notifyChannels: NotifyChannels
@@ -513,6 +513,16 @@ export type AlertSettings = {
   batteryEnabled?: boolean
   /** バッテリー残量の閾値 (%)。これを下回ったらアラートを送る。既定 10。 */
   batteryThresholdPercent?: number
+  /** Phase 1.11: バッテリー残量アラートの再アラート設定（逸脱と同じセマンティクス）。 */
+  batteryReAlertEnabled?: boolean
+  /** バッテリー残量アラートの再アラート間隔（時間単位、1〜24）。既定 6 */
+  batteryReAlertHours?: number
+  /** Phase 1.11: オフラインアラートの再アラート設定（逸脱と同じセマンティクス）。
+   *  - false (既定): 1 回しか発火しない（復帰するまで）
+   *  - true: 通信途絶が続いている間、offlineReAlertHours ごとに再発火 */
+  offlineReAlertEnabled?: boolean
+  /** オフラインアラートの再アラート間隔（時間単位、1〜24）。既定 6 */
+  offlineReAlertHours?: number
   /** Phase: 除外時間帯。指定範囲内ではアラートを発火しない。
    *  古いデータでは undefined → 除外なし。 */
   exclusionWindows?: AlertExclusionWindow[]
