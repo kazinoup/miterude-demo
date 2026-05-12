@@ -109,7 +109,7 @@ export const SUPPORTED_DEVICES: SupportedDevice[] = [
     description:
       'LCD ディスプレイを備えた屋内向け LoRaWAN 温湿度センサー。事務所・店舗・倉庫の常温帯モニタリングに使う。',
     supported: true,
-    imageUrl: '/devices/milesight-em320-th.png',
+    imageUrl: '/devices/milesight-em300-th.png',
     capabilities: { battery: true },
     kind: 'temperature-humidity',
   },
