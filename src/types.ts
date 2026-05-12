@@ -1020,10 +1020,12 @@ export type DashboardReminderStore = Record<string, DashboardReminder>
  *  null = 顧客ユーザー。 */
 export type SystemRole = 'super_admin' | 'support'
 
-/** スタッフ区分（systemRole='support' のユーザを表示上だけ細分化）。
- *  権限は両方ともテナントへの impersonation 可だが、表示と請求事前通知の
- *  運用区別のために使う。未設定 = 'support' として扱う。 */
-export type StaffCategory = 'support' | 'sales'
+/** スタッフ区分。Phase 1.5a で 'system_admin' を追加。
+ *  - 'system_admin': システム管理者（systemRole='super_admin' と紐付く）。Admin Console フルアクセス
+ *  - 'support': サポート担当（systemRole='support'）。割当テナントのみ、読み取り + impersonation
+ *  - 'sales': 営業担当（systemRole='support'）。割当テナントのみ、読み取り + impersonation
+ *  「表示・請求事前通知の宛先候補」「Admin Console での権限分岐」に使う。 */
+export type StaffCategory = 'system_admin' | 'support' | 'sales'
 
 /** テナント内ロール（顧客側でのロール）。 */
 export type TenantRole = 'editor' | 'dashboard_confirmer'

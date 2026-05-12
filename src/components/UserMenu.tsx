@@ -87,11 +87,14 @@ export function UserMenu({ session, onSwitchContext }: Props) {
 
   function handleProfile() {
     setOpen(false)
-    toast('プロフィール変更画面を開きます（Clerk）', 'info')
+    toast('プロフィール変更画面は Clerk 統合時に提供します', 'info')
   }
   function handleLogout() {
     setOpen(false)
-    toast('ログアウトしました（Clerk モック）', 'info')
+    // Phase 1.5a: モック認証のサインアウト本実装。
+    // localStorage の auth session を消して /login へ遷移。
+    saveAuthSession(null)
+    window.location.href = '/login'
   }
 
   function handleSwitch(s: AuthSession) {

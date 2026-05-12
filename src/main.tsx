@@ -6,6 +6,8 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { installDemoResetHook } from './lib/demoReset'
 import { resolveActiveOrgFromUrl } from './lib/tenantResolver'
 import { PublicDashboardView } from './components/views/PublicDashboardView'
+import { LoginView } from './components/views/LoginView'
+import { loadAuthSession } from './admin/lib/adminStorage'
 
 // URL クエリ `?reset=demo` や console `miterudeResetDemo()` で
 // localStorage を初期化できるようにする。React より前に実行。
@@ -21,6 +23,10 @@ function extractShareToken(): string | null {
   return null
 }
 
+function isLoginPath(): boolean {
+  return typeof window !== 'undefined' && window.location.pathname === '/login'
+}
+
 const shareToken = extractShareToken()
 
 if (shareToken) {
@@ -32,9 +38,20 @@ if (shareToken) {
       </ErrorBoundary>
     </StrictMode>,
   )
+} else if (isLoginPath()) {
+  // ログイン画面: セッション不要、テナント解決もしない
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <LoginView />
+      </ErrorBoundary>
+    </StrictMode>,
+  )
+} else if (!loadAuthSession()) {
+  // 未ログイン → /login にリダイレクト（ハードナビゲートで LoginView を確実にマウント）
+  window.location.replace('/login')
 } else {
-  // URL の <slug> から active org を解決してから React マウント。
-  // supabaseQueries の全クエリはこの後 getActiveOrgId() を参照する。
+  // 通常のアプリ起動
   ;(async () => {
     await resolveActiveOrgFromUrl().catch((e) => {
       console.warn('[boot] resolveActiveOrgFromUrl failed, falling back to demo', e)

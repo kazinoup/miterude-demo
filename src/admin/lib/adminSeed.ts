@@ -13,11 +13,9 @@ import type {
   OrganizationMember,
 } from '../../types'
 import {
-  loadAuthSession,
   loadOrganizationMembers,
   loadOrganizations,
   loadUsers,
-  saveAuthSession,
   saveOrganizationMembers,
   saveOrganizations,
   saveUsers,
@@ -63,6 +61,8 @@ function buildDefaultUsers(): AppUser[] {
       email: 'inoue@canbright.co.jp',
       displayName: '井上 和馬',
       systemRole: 'super_admin',
+      // Phase 1.5a: super_admin は staff_category='system_admin' で staff 一覧に出る
+      staffCategory: 'system_admin',
       createdAt: now,
     },
     {
@@ -267,16 +267,10 @@ export function ensureSeedData(): void {
   // 4) 旧 v3 ストアを demo テナントへ
   migrateLegacyTenantState()
 
-  // 5) セッション既定値
-  //  super_admin の井上 和馬を admin セッションとしてログインさせる。
-  //  これで /?reset=demo 後すぐに Admin Console を触れる。
-  //  顧客テナント UI を見たい場合は admin から impersonation で入る運用。
-  if (!loadAuthSession()) {
-    saveAuthSession({
-      kind: 'admin',
-      userId: DEMO_SUPER_ADMIN_ID,
-    })
-  }
+  // 5) Phase 1.5a 以降: 自動ログインは廃止。
+  //  シード後は /login にリダイレクトされ、ユーザーが email + password を入力して入る。
+  //  デモ用に: super_admin = inoue@canbright.co.jp / Canbright0987、
+  //           編集者・確認者はデモログインチップで 1 クリック認証可能。
 
   localStorage.setItem(SEED_FLAG_KEY, '1')
 }
