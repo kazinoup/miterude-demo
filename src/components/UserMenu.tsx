@@ -147,14 +147,21 @@ export function UserMenu({ session }: Props) {
   )
 }
 
-/** 現在のログインに対する権限ラベルを返す（super_admin / 編集メンバー / 確認者） */
+/** 現在のログインに対する権限ラベルを返す。
+ *  - super_admin: 「システム管理者」
+ *  - support 系: staff_category に応じて「サポート」「営業」
+ *  - tenant: 「編集メンバー」「確認者」 */
 function buildCurrentRoleLabel(): string | null {
   const session = loadAuthSession()
   if (!session) return null
   const users = loadUsers()
   const u = users[session.userId]
   if (!u) return null
-  if (u.systemRole === 'super_admin') return 'スーパーアドミン'
+  if (u.systemRole === 'super_admin') return 'システム管理者'
+  if (u.systemRole === 'support') {
+    if (u.staffCategory === 'sales') return '営業'
+    return 'サポート'
+  }
   if (session.kind === 'tenant') {
     const members = loadOrganizationMembers()
     const m = Object.values(members).find(

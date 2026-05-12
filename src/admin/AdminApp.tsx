@@ -278,15 +278,25 @@ export function AdminApp({ session }: Props) {
     )
   }, [])
 
-  /** UserMenu に渡すモック UserSession（admin 用） */
+  /** UserMenu に渡すモック UserSession（admin 用）。
+   *  staff_category に応じて表示ラベルと effectiveRole を出し分け。 */
   const userSession: UserSession = useMemo(() => {
     const users = loadUsers()
     const u = users[session.userId]
+    const category = u?.staffCategory
+    const orgLabel =
+      category === 'system_admin'
+        ? 'システム管理者 (/admin)'
+        : category === 'sales'
+          ? '営業 (/admin)'
+          : category === 'support'
+            ? 'サポート (/admin)'
+            : 'スタッフ (/admin)'
     return {
-      organizationName: 'スーパーアドミン (/admin)',
+      organizationName: orgLabel,
       userName: u?.displayName ?? '管理者',
       email: u?.email ?? '',
-      effectiveRole: 'super_admin',
+      effectiveRole: u?.systemRole === 'super_admin' ? 'super_admin' : 'support',
     }
   }, [session.userId])
 
