@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { getActiveOrgId } from '../../lib/supabase'
 import {
   Settings,
   Plus,
@@ -873,6 +874,7 @@ export function SettingsView({
       <NotificationGroupEditDialog
         open={groupDialog.open}
         initial={groupDialog.initial}
+        organizationId={getActiveOrgId()}
         onClose={() => setGroupDialog({ open: false, initial: null })}
         onSubmit={(g) => {
           onUpsertNotificationGroup(g)

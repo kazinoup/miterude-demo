@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Plus, Trash2, Mail, MessageSquare, Webhook } from 'lucide-react'
+import { X, Plus, Trash2, Mail, MessageSquare, Webhook, Send } from 'lucide-react'
 import type {
   NotificationChannel,
   NotificationChannelKind,
@@ -8,10 +8,14 @@ import type {
 } from '../types'
 import { NOTIFICATION_TIMING_SHORT_LABELS } from '../types'
 import { createChannel, createNotificationGroup } from '../lib/notify'
+import { sendTestNotification } from '../lib/notifyTest'
+import { toast } from '../lib/toast'
 
 type Props = {
   open: boolean
   initial: NotificationGroup | null
+  /** テスト送信の組織コンテキスト。指定するとメッセージに組織名を埋め込む。 */
+  organizationId?: string
   onClose: () => void
   onSubmit: (group: NotificationGroup) => void
   onDelete?: (id: string) => void
@@ -46,6 +50,7 @@ function placeholderFor(kind: NotificationChannelKind): string {
 export function NotificationGroupEditDialog({
   open,
   initial,
+  organizationId,
   onClose,
   onSubmit,
   onDelete,
@@ -55,6 +60,8 @@ export function NotificationGroupEditDialog({
   const [description, setDescription] = useState('')
   const [timing, setTiming] = useState<NotificationTiming>('immediate')
   const [channels, setChannels] = useState<NotificationChannel[]>([])
+  /** チャネル ID -> テスト送信中フラグ */
+  const [testing, setTesting] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (!open) return
@@ -88,6 +95,33 @@ export function NotificationGroupEditDialog({
 
   function removeChannel(id: string) {
     setChannels((prev) => prev.filter((c) => c.id !== id))
+  }
+
+  async function handleTestSend(channel: NotificationChannel) {
+    const target = channel.target.trim()
+    if (!target) {
+      toast('送信先を入力してから「テスト送信」を押してください', 'error')
+      return
+    }
+    setTesting((prev) => ({ ...prev, [channel.id]: true }))
+    try {
+      const res = await sendTestNotification({
+        channelKind: channel.kind,
+        target,
+        organizationId,
+      })
+      if (res.ok) {
+        toast(`${CHANNEL_KIND_LABEL[channel.kind]} へテスト送信しました`, 'success')
+      } else {
+        toast(`テスト送信に失敗: ${res.error}`, 'error')
+      }
+    } finally {
+      setTesting((prev) => {
+        const next = { ...prev }
+        delete next[channel.id]
+        return next
+      })
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -239,29 +273,43 @@ export function NotificationGroupEditDialog({
               <p className="muted">送信先を 1 件以上追加してください。</p>
             ) : (
               <ul className="channel-list">
-                {channels.map((c) => (
-                  <li key={c.id} className="channel-row">
-                    <span className="channel-kind-label">
-                      <ChannelIcon kind={c.kind} />
-                      {CHANNEL_KIND_LABEL[c.kind]}
-                    </span>
-                    <input
-                      type={c.kind === 'email' ? 'email' : 'url'}
-                      className="form-input"
-                      value={c.target}
-                      onChange={(e) => updateChannel(c.id, { target: e.target.value })}
-                      placeholder={placeholderFor(c.kind)}
-                    />
-                    <button
-                      type="button"
-                      className="icon-btn icon-btn-danger"
-                      aria-label="削除"
-                      onClick={() => removeChannel(c.id)}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </li>
-                ))}
+                {channels.map((c) => {
+                  const isTesting = Boolean(testing[c.id])
+                  const canTest = c.target.trim().length > 0 && !isTesting
+                  return (
+                    <li key={c.id} className="channel-row">
+                      <span className="channel-kind-label">
+                        <ChannelIcon kind={c.kind} />
+                        {CHANNEL_KIND_LABEL[c.kind]}
+                      </span>
+                      <input
+                        type={c.kind === 'email' ? 'email' : 'url'}
+                        className="form-input"
+                        value={c.target}
+                        onChange={(e) => updateChannel(c.id, { target: e.target.value })}
+                        placeholder={placeholderFor(c.kind)}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => handleTestSend(c)}
+                        disabled={!canTest}
+                        title="今入力されている宛先にテストメッセージを 1 回送ります（履歴に残しません）"
+                      >
+                        <Send size={13} />
+                        <span>{isTesting ? '送信中…' : 'テスト送信'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn icon-btn-danger"
+                        aria-label="削除"
+                        onClick={() => removeChannel(c.id)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>

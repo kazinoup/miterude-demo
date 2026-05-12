@@ -35,6 +35,8 @@ import {
   Copy,
   EyeOff,
   Code,
+  Send,
+  MessageSquare,
 } from 'lucide-react'
 import {
   loadOrganizations,
@@ -96,11 +98,16 @@ import type {
   BillingCycle,
   ContractType,
   InvoiceNotifyRecipient,
+  NotificationChannel,
+  NotificationChannelKind,
+  NotificationGroup,
   Organization,
   OrganizationStore,
   PaymentMethod,
   TenantRole,
 } from '../../types'
+import { NOTIFICATION_TIMING_SHORT_LABELS } from '../../types'
+import { sendTestNotification } from '../../lib/notifyTest'
 
 type Props = {
   tenantId: string
@@ -124,6 +131,7 @@ type DetailTab =
   | 'sensors'
   | 'gateways'
   | 'integration'
+  | 'notifications'
   | 'audit'
 
 /* ---------- 共有フォーマッタ ---------- */
@@ -611,6 +619,13 @@ export function AdminTenantDetailView({
             {memberRows.length + supportRows.length}
           </span>
         </TabBtn>
+        <TabBtn
+          active={tab === 'notifications'}
+          onClick={() => setTab('notifications')}
+        >
+          <Bell size={14} />
+          <span>通知</span>
+        </TabBtn>
         <TabBtn active={tab === 'audit'} onClick={() => setTab('audit')}>
           <History size={14} />
           <span>監査ログ</span>
@@ -688,6 +703,10 @@ export function AdminTenantDetailView({
           // tenantState の変化（センサー追加など）に追従するため依存に渡す
           tenantStateRev={tenantState}
         />
+      )}
+
+      {tab === 'notifications' && (
+        <NotificationsTab org={org} />
       )}
 
       {tab === 'audit' && (
@@ -2895,4 +2914,162 @@ function parseStatusLabel(s: InboxRow['parseStatus']): string {
   if (s === 'parsed') return '反映済み'
   if (s === 'failed') return 'パース失敗'
   return '無視'
+}
+
+/* ===== 通知タブ =====
+ *
+ * 対象テナントの notification_groups を Supabase から取得し、
+ * 各チャネルに「テスト送信」ボタンを並べる。Admin が顧客の
+ * 「通知が届かない」問い合わせを切り分けやすいよう、見るだけ + テストだけの
+ * 軽量タブ。編集は引き続きテナント側 (Settings 画面) で行う。
+ */
+function NotificationsTab({ org }: { org: Organization }) {
+  const [groups, setGroups] = useState<NotificationGroup[]>([])
+  const [loading, setLoading] = useState<boolean>(true)
+  const [testing, setTesting] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    supabase
+      .from('notification_groups')
+      .select(
+        'id, name, description, timing, enabled, channels, created_at, updated_at',
+      )
+      .eq('organization_id', org.id)
+      .order('created_at', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          console.error('[notifications] fetch error', error)
+          toast('通知グループの取得に失敗しました', 'error')
+          setGroups([])
+        } else {
+          setGroups(
+            (data ?? []).map((r) => ({
+              id: r.id as string,
+              name: r.name as string,
+              description: (r.description as string | null) ?? undefined,
+              timing: r.timing as NotificationGroup['timing'],
+              channels: (r.channels as NotificationChannel[]) ?? [],
+              createdAt: new Date(r.created_at as string),
+              updatedAt: new Date(r.updated_at as string),
+            })),
+          )
+        }
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [org.id])
+
+  async function handleTestSend(channel: NotificationChannel) {
+    const target = channel.target.trim()
+    if (!target) {
+      toast('送信先が未入力のチャネルです', 'error')
+      return
+    }
+    setTesting((p) => ({ ...p, [channel.id]: true }))
+    try {
+      const res = await sendTestNotification({
+        channelKind: channel.kind,
+        target,
+        organizationId: org.id,
+      })
+      if (res.ok) {
+        toast(`${channelKindLabel(channel.kind)} へテスト送信しました`, 'success')
+      } else {
+        toast(`テスト送信に失敗: ${res.error}`, 'error')
+      }
+    } finally {
+      setTesting((p) => {
+        const next = { ...p }
+        delete next[channel.id]
+        return next
+      })
+    }
+  }
+
+  return (
+    <div className="admin-section admin-section-tab">
+      <header className="admin-section-head">
+        <div>
+          <h3>
+            <Bell size={16} className="inline-icon" />
+            通知グループ
+          </h3>
+          <p className="muted">
+            テナントが設定した通知グループの一覧です。各チャネルから「テスト送信」を打って配信経路を確認できます。
+            <strong>編集はテナント側の設定画面で行います</strong>
+            （Admin Console からは見るだけ + テスト送信のみ）。
+          </p>
+        </div>
+      </header>
+
+      {loading ? (
+        <div className="admin-empty-block">読み込み中…</div>
+      ) : groups.length === 0 ? (
+        <div className="admin-empty-block">
+          このテナントには通知グループがまだ登録されていません。
+        </div>
+      ) : (
+        <ul className="admin-notif-list">
+          {groups.map((g) => (
+            <li key={g.id} className="admin-notif-item panel-card">
+              <header className="admin-notif-head">
+                <h4>{g.name}</h4>
+                <span className="badge-outline">
+                  {NOTIFICATION_TIMING_SHORT_LABELS[g.timing]}
+                </span>
+              </header>
+              {g.description && (
+                <p className="muted small">{g.description}</p>
+              )}
+              {g.channels.length === 0 ? (
+                <p className="muted small">送信先未設定</p>
+              ) : (
+                <ul className="admin-notif-channels">
+                  {g.channels.map((c) => {
+                    const isTesting = Boolean(testing[c.id])
+                    return (
+                      <li key={c.id} className="admin-notif-channel-row">
+                        <span className="channel-kind-label">
+                          <ChannelKindIcon kind={c.kind} />
+                          {channelKindLabel(c.kind)}
+                        </span>
+                        <code className="mono admin-notif-target">{c.target}</code>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => handleTestSend(c)}
+                          disabled={isTesting || !c.target.trim()}
+                          title="このチャネルにテストメッセージを 1 回送ります（履歴に残しません）"
+                        >
+                          <Send size={13} />
+                          <span>{isTesting ? '送信中…' : 'テスト送信'}</span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function channelKindLabel(k: NotificationChannelKind): string {
+  if (k === 'email') return 'メール'
+  if (k === 'slack') return 'Slack'
+  return 'Webhook'
+}
+
+function ChannelKindIcon({ kind }: { kind: NotificationChannelKind }) {
+  if (kind === 'email') return <Mail size={14} />
+  if (kind === 'slack') return <MessageSquare size={14} />
+  return <Webhook size={14} />
 }
