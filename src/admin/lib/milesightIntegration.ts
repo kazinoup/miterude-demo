@@ -1,121 +1,139 @@
 /**
- * Phase F-2 のモック実装。
+ * Milesight 連携設定（Supabase `manufacturer_integrations` 連動）
  *
- * 本番では Supabase に `manufacturer_integrations` テーブルを置き、
- * (organization_id, manufacturer) ペアごとに 1 行（webhook_secret, enabled,
- * sensor_kinds[]）を保持する。Admin Console の「Milesight 連携設定」タブからは
- *  - Webhook URL（テナントごとに固有）
- *  - X-Webhook-Secret の表示 / 再発行
+ * Admin Console の「Milesight 連携設定」タブからは
+ *  - Webhook URL（テナント固有・Supabase Edge Function を直接指す）
+ *  - MDP で発行された UUID / Secret の入力
  *  - 直近の `webhook_inbox` イベント
- * を見せて、Milesight Development Platform (MDP) の Application 設定に
- * 貼り付けてもらう運用。
+ * を表示し、MDP 側の Application 設定に貼り付けてもらう運用。
  *
- * モック側では localStorage `miterude:admin:manufacturer_integrations` に
- * `${orgId}::Milesight` をキーにして保存する。
+ * 永続化は Supabase `manufacturer_integrations` テーブル
+ * （`(organization_id, manufacturer)` で一意）。
+ * `webhook_secret` の有無で `enabled` を同期する。
+ * webhook 受信側 (Edge Function `webhook-milesight`) はこのテーブルを SELECT する。
  */
-import type { ManufacturerIntegration, ManufacturerIntegrationStore } from '../../types'
+import { supabase } from '../../lib/supabase'
+import type { ManufacturerIntegration, SensorKind } from '../../types'
 
-const KEY = 'miterude:admin:manufacturer_integrations'
+const MANUFACTURER = 'Milesight'
+const DEFAULT_SENSOR_KINDS: SensorKind[] = ['temperature-humidity']
 
-/* ---------- 永続化（Date を ISO で保存・復元） ---------- */
-
-function toDate(v: unknown): Date {
-  if (v instanceof Date) return v
-  if (typeof v === 'string' || typeof v === 'number') {
-    const d = new Date(v)
-    if (!Number.isNaN(d.getTime())) return d
-  }
-  return new Date(0)
+type Row = {
+  id: string
+  organization_id: string
+  manufacturer: string
+  webhook_secret: string | null
+  webhook_uuid: string | null
+  sensor_kinds: string[] | null
+  enabled: boolean | null
+  updated_at: string
 }
 
-function rehydrate(item: ManufacturerIntegration): ManufacturerIntegration {
-  return { ...item, updatedAt: toDate(item.updatedAt) }
-}
-
-export function loadIntegrations(): ManufacturerIntegrationStore {
-  try {
-    const raw = localStorage.getItem(KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as ManufacturerIntegrationStore
-    const out: ManufacturerIntegrationStore = {}
-    for (const [k, v] of Object.entries(parsed)) out[k] = rehydrate(v)
-    return out
-  } catch {
-    return {}
+function fromRow(row: Row): ManufacturerIntegration {
+  return {
+    id: row.id,
+    manufacturer: row.manufacturer,
+    webhookSecret: row.webhook_secret ?? undefined,
+    webhookUuid: row.webhook_uuid ?? undefined,
+    sensorKinds: ((row.sensor_kinds ?? DEFAULT_SENSOR_KINDS) as SensorKind[]),
+    updatedAt: new Date(row.updated_at),
   }
 }
 
-export function saveIntegrations(store: ManufacturerIntegrationStore): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(store))
-  } catch (e) {
-    console.warn('[miterude-admin] manufacturer_integrations write failed:', e)
-  }
-}
+const SELECT_COLS =
+  'id, organization_id, manufacturer, webhook_secret, webhook_uuid, sensor_kinds, enabled, updated_at'
 
-/* ---------- Milesight 専用ヘルパ ---------- */
-
-/** ストア内のキー: テナント × メーカー */
-function integrationKey(orgId: string): string {
-  return `${orgId}::Milesight`
-}
-
-export function getMilesightIntegration(
-  orgId: string,
-): ManufacturerIntegration | undefined {
-  return loadIntegrations()[integrationKey(orgId)]
-}
-
-/** 未作成なら空の Integration レコードを作成して返す。
- *  UUID / Secret は MDP 側で発行されるため、**ミテルデ側では生成しない**。
- *  admin が手入力した値で `updateMilesightCredentials` を呼ぶ運用。
- *  「連携中 / 停止中」は `webhookSecret` の有無で判定する（独立フラグなし）。 */
-export function ensureMilesightIntegration(
-  orgId: string,
-): ManufacturerIntegration {
-  const store = loadIntegrations()
-  const existing = store[integrationKey(orgId)]
-  if (existing) return existing
-  const created: ManufacturerIntegration = {
-    id: integrationKey(orgId),
-    manufacturer: 'Milesight',
-    webhookSecret: undefined,
-    webhookUuid: undefined,
-    sensorKinds: ['temperature-humidity'],
-    updatedAt: new Date(),
-  }
-  store[integrationKey(orgId)] = created
-  saveIntegrations(store)
-  return created
-}
-
-/** UUID / Secret を更新する（admin が MDP からコピペした値を保存）。
- *  入力された patch だけを反映し、未指定のフィールドは保持する。 */
-export function updateMilesightCredentials(
-  orgId: string,
-  patch: { webhookUuid?: string; webhookSecret?: string },
-): ManufacturerIntegration {
-  const store = loadIntegrations()
-  const existing = store[integrationKey(orgId)] ?? ensureMilesightIntegration(orgId)
-  const updated: ManufacturerIntegration = {
-    ...existing,
-    ...(patch.webhookUuid !== undefined ? { webhookUuid: patch.webhookUuid } : {}),
-    ...(patch.webhookSecret !== undefined ? { webhookSecret: patch.webhookSecret } : {}),
-    updatedAt: new Date(),
-  }
-  store[integrationKey(orgId)] = updated
-  saveIntegrations(store)
-  return updated
-}
-
-/** モック表示用の Webhook URL を組み立てる。
- *  本番では `process.env.NEXT_PUBLIC_APP_URL` 等から取る前提。
- *  ここでは window.location.origin を使い、開発時は
- *  `http://localhost:3100/api/webhooks/milesight/<org_id>` のように見える。 */
+/** Webhook URL（テナントごとに固有）。
+ *  本番は `VITE_SUPABASE_URL` から Supabase Edge Function の URL を組み立てる。
+ *  未設定時のみ window.location.origin にフォールバック（ローカル動作確認用）。 */
 export function buildWebhookUrl(orgId: string): string {
+  const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim()
+  if (supabaseUrl) {
+    return `${supabaseUrl}/functions/v1/webhook-milesight/${orgId}`
+  }
   const base =
     typeof window !== 'undefined' && window.location.origin
       ? window.location.origin
       : 'https://miterude.app'
   return `${base}/api/webhooks/milesight/${orgId}`
+}
+
+/** テナントの Milesight 連携設定を取得。未登録なら undefined。 */
+export async function getMilesightIntegration(
+  orgId: string,
+): Promise<ManufacturerIntegration | undefined> {
+  const { data, error } = await supabase
+    .from('manufacturer_integrations')
+    .select(SELECT_COLS)
+    .eq('organization_id', orgId)
+    .eq('manufacturer', MANUFACTURER)
+    .maybeSingle()
+  if (error) {
+    console.error('[milesight] integration fetch error', error)
+    return undefined
+  }
+  if (!data) return undefined
+  return fromRow(data as Row)
+}
+
+/** 未作成なら空レコードを INSERT して返す。
+ *  UUID / Secret は MDP 側で発行されるため、ここでは生成しない。 */
+export async function ensureMilesightIntegration(
+  orgId: string,
+): Promise<ManufacturerIntegration> {
+  const existing = await getMilesightIntegration(orgId)
+  if (existing) return existing
+  const { data, error } = await supabase
+    .from('manufacturer_integrations')
+    .insert({
+      organization_id: orgId,
+      manufacturer: MANUFACTURER,
+      sensor_kinds: DEFAULT_SENSOR_KINDS,
+      enabled: false,
+    })
+    .select(SELECT_COLS)
+    .single()
+  if (error || !data) {
+    throw new Error(
+      `Milesight 連携設定の初期化に失敗しました: ${error?.message ?? 'unknown'}`,
+    )
+  }
+  return fromRow(data as Row)
+}
+
+/** UUID / Secret を更新する（admin が MDP からコピペした値を保存）。
+ *  `webhookSecret` が入った時点で `enabled=true`、空になったら `enabled=false`。
+ *  `patch` で未指定のフィールドは保持する。 */
+export async function updateMilesightCredentials(
+  orgId: string,
+  patch: { webhookUuid?: string; webhookSecret?: string },
+): Promise<ManufacturerIntegration> {
+  // 既存行を必ず用意してから UPDATE する（無ければ INSERT）
+  await ensureMilesightIntegration(orgId)
+
+  const update: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  }
+  if (patch.webhookUuid !== undefined) {
+    update.webhook_uuid = patch.webhookUuid.trim() || null
+  }
+  if (patch.webhookSecret !== undefined) {
+    const trimmed = patch.webhookSecret.trim()
+    update.webhook_secret = trimmed || null
+    update.enabled = Boolean(trimmed)
+  }
+
+  const { data, error } = await supabase
+    .from('manufacturer_integrations')
+    .update(update)
+    .eq('organization_id', orgId)
+    .eq('manufacturer', MANUFACTURER)
+    .select(SELECT_COLS)
+    .single()
+  if (error || !data) {
+    throw new Error(
+      `Milesight 連携設定の更新に失敗しました: ${error?.message ?? 'unknown'}`,
+    )
+  }
+  return fromRow(data as Row)
 }

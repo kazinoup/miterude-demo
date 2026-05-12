@@ -2226,42 +2226,76 @@ function MilesightIntegrationPanel({
   adminUserId: string
   tenantStateRev: ReturnType<typeof loadState>
 }) {
-  const [integration, setIntegration] = useState<ManufacturerIntegration>(() =>
-    ensureMilesightIntegration(org.id),
+  // Supabase から非同期で読むため初期値は null
+  const [integration, setIntegration] = useState<ManufacturerIntegration | null>(
+    null,
   )
+  const [loading, setLoading] = useState<boolean>(true)
+  const [saving, setSaving] = useState<boolean>(false)
   // 入力欄の現在値（手入力 → 確定で保存）
-  const [uuidDraft, setUuidDraft] = useState<string>(
-    integration.webhookUuid ?? '',
-  )
-  const [secretDraft, setSecretDraft] = useState<string>(
-    integration.webhookSecret ?? '',
-  )
+  const [uuidDraft, setUuidDraft] = useState<string>('')
+  const [secretDraft, setSecretDraft] = useState<string>('')
   const [showSecret, setShowSecret] = useState<boolean>(false)
   const [rawViewerEvent, setRawViewerEvent] = useState<WebhookInboxItem | null>(
     null,
   )
   const webhookUrl = buildWebhookUrl(org.id)
 
-  const uuidDirty = uuidDraft !== (integration.webhookUuid ?? '')
-  const secretDirty = secretDraft !== (integration.webhookSecret ?? '')
+  // テナント切替・初回ロードで Supabase から取得 / 未登録なら空行を作る
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    ensureMilesightIntegration(org.id)
+      .then((it) => {
+        if (cancelled) return
+        setIntegration(it)
+        setUuidDraft(it.webhookUuid ?? '')
+        setSecretDraft(it.webhookSecret ?? '')
+      })
+      .catch((e) => {
+        console.error('[milesight] load failed', e)
+        toast('Milesight 連携設定の読み込みに失敗しました', 'error')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [org.id])
+
+  const uuidDirty = uuidDraft !== (integration?.webhookUuid ?? '')
+  const secretDirty = secretDraft !== (integration?.webhookSecret ?? '')
   const dirty = uuidDirty || secretDirty
 
-  function handleSaveCredentials() {
-    const next = updateMilesightCredentials(org.id, {
-      webhookUuid: uuidDraft.trim() || undefined,
-      webhookSecret: secretDraft.trim() || undefined,
-    })
-    setIntegration(next)
-    logStaffAction({
-      staffUserId: adminUserId,
-      organizationId: org.id,
-      action: 'milesight_credentials_updated',
-      metadata: {
-        uuidChanged: uuidDirty,
-        secretChanged: secretDirty,
-      },
-    })
-    toast('Milesight 連携情報を保存しました', 'success')
+  async function handleSaveCredentials() {
+    if (saving) return
+    setSaving(true)
+    try {
+      const next = await updateMilesightCredentials(org.id, {
+        webhookUuid: uuidDraft.trim() || undefined,
+        webhookSecret: secretDraft.trim() || undefined,
+      })
+      setIntegration(next)
+      logStaffAction({
+        staffUserId: adminUserId,
+        organizationId: org.id,
+        action: 'milesight_credentials_updated',
+        metadata: {
+          uuidChanged: uuidDirty,
+          secretChanged: secretDirty,
+        },
+      })
+      toast('Milesight 連携情報を保存しました', 'success')
+    } catch (e) {
+      console.error('[milesight] save failed', e)
+      toast(
+        e instanceof Error ? e.message : 'Milesight 連携設定の保存に失敗しました',
+        'error',
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function handleCopy(text: string, label: string) {
@@ -2321,12 +2355,13 @@ function MilesightIntegrationPanel({
               onChange={(e) => setUuidDraft(e.target.value)}
               placeholder="665e05dd-2f56-4c11-ac17-a77d74d747cf"
               spellCheck={false}
+              disabled={loading}
             />
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => handleCopy(integration.webhookUuid ?? '', 'UUID')}
-              disabled={!integration.webhookUuid}
+              onClick={() => handleCopy(integration?.webhookUuid ?? '', 'UUID')}
+              disabled={!integration?.webhookUuid}
               title="保存済みの UUID をコピー"
             >
               <Copy size={13} />
@@ -2352,6 +2387,7 @@ function MilesightIntegrationPanel({
               placeholder="MDP で発行された Secret を貼り付け"
               spellCheck={false}
               autoComplete="off"
+              disabled={loading}
             />
             <button
               type="button"
@@ -2365,8 +2401,8 @@ function MilesightIntegrationPanel({
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => handleCopy(integration.webhookSecret ?? '', 'Secret')}
-              disabled={!integration.webhookSecret}
+              onClick={() => handleCopy(integration?.webhookSecret ?? '', 'Secret')}
+              disabled={!integration?.webhookSecret}
               title="保存済みの Secret をコピー"
             >
               <Copy size={13} />
@@ -2376,7 +2412,9 @@ function MilesightIntegrationPanel({
           <p className="form-help">
             受信ハンドラは <code className="mono">X-Webhook-Secret</code>{' '}
             ヘッダがこの値と一致しないリクエストを 401 で拒否します。
-            最終更新: {formatDateTime(integration.updatedAt)}
+            {integration ? (
+              <> 最終更新: {formatDateTime(integration.updatedAt)}</>
+            ) : null}
           </p>
         </div>
 
@@ -2385,12 +2423,13 @@ function MilesightIntegrationPanel({
             type="button"
             className="btn btn-primary"
             onClick={handleSaveCredentials}
-            disabled={!dirty}
+            disabled={!dirty || saving || loading}
           >
             <Save size={14} />
-            <span>UUID / Secret を保存</span>
+            <span>{saving ? '保存中…' : 'UUID / Secret を保存'}</span>
           </button>
-          {dirty && (
+          {loading && <span className="muted small">読み込み中…</span>}
+          {!loading && dirty && (
             <span className="muted small">未保存の変更があります</span>
           )}
         </div>
