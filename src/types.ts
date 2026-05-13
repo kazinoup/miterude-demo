@@ -513,10 +513,11 @@ export type AlertSettings = {
   batteryEnabled?: boolean
   /** バッテリー残量の閾値 (%)。これを下回ったらアラートを送る。既定 10。 */
   batteryThresholdPercent?: number
-  /** Phase 1.11: バッテリー残量アラートの再アラート設定（逸脱と同じセマンティクス）。 */
+  /** Phase 1.11: バッテリー残量アラートの再アラート設定。
+   *  残量 10% 程度でも数週間使えるため、間隔は「日単位」で持つ。 */
   batteryReAlertEnabled?: boolean
-  /** バッテリー残量アラートの再アラート間隔（時間単位、1〜24）。既定 6 */
-  batteryReAlertHours?: number
+  /** バッテリー残量アラートの再アラート間隔（日単位、1〜30）。既定 7 */
+  batteryReAlertDays?: number
   /** Phase 1.11: オフラインアラートの再アラート設定（逸脱と同じセマンティクス）。
    *  - false (既定): 1 回しか発火しない（復帰するまで）
    *  - true: 通信途絶が続いている間、offlineReAlertHours ごとに再発火 */
@@ -907,15 +908,17 @@ export type SavedFilterStore = Record<string, SavedFilter>
  * という前提のデータ層で、画面では「アラート」メニューから一覧確認できる。 */
 
 export type AlertLogKind =
-  | 'deviation-alert' // 逸脱・危険（赤）
-  | 'deviation-warn'  // 逸脱・注意（オレンジ）
-  | 'offline'         // オフライン
-  | 'battery'         // バッテリー残量低下（Phase C）
+  | 'deviation-alert'   // 逸脱・危険（赤）
+  | 'deviation-warn'    // 逸脱・注意（オレンジ）
+  | 'offline'           // オフライン
+  | 'offline-recovery'  // オフライン → 復帰（Phase 1.11b）
+  | 'battery'           // バッテリー残量低下（Phase C）
 
 export const ALERT_LOG_KIND_LABELS: Record<AlertLogKind, string> = {
   'deviation-alert': '逸脱（危険）',
   'deviation-warn': '逸脱（注意）',
   offline: 'オフライン',
+  'offline-recovery': 'オフライン復帰',
   battery: 'バッテリー',
 }
 

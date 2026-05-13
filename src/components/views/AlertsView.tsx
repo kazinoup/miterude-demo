@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   AlertOctagon,
   WifiOff,
+  Wifi,
   Battery,
   Cpu,
   Filter as FilterIcon,
@@ -73,6 +74,7 @@ const KIND_ORDER: AlertLogKind[] = [
   'deviation-alert',
   'deviation-warn',
   'offline',
+  'offline-recovery',
   'battery',
 ]
 
@@ -84,6 +86,8 @@ function kindIcon(kind: AlertLogKind) {
       return AlertTriangle
     case 'offline':
       return WifiOff
+    case 'offline-recovery':
+      return Wifi
     case 'battery':
       return Battery
   }

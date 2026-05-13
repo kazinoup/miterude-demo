@@ -26,9 +26,10 @@ type Props = {
 }
 
 const OFFLINE_PRESETS: { label: string; minutes: number }[] = [
-  { label: '30 分', minutes: 30 },
   { label: '1 時間', minutes: 60 },
+  { label: '3 時間', minutes: 180 },
   { label: '6 時間', minutes: 360 },
+  { label: '12 時間', minutes: 720 },
   { label: '24 時間', minutes: 1440 },
 ]
 
@@ -283,7 +284,7 @@ export function SensorAlertSettings({
                 </div>
               </div>
 
-              {/* Phase 1.11: バッテリーアラートの再アラート設定 */}
+              {/* Phase 1.11: バッテリーアラートの再アラート設定（日単位） */}
               <div className="alert-row alert-row-sub">
                 <label className="check-row">
                   <input
@@ -301,21 +302,21 @@ export function SensorAlertSettings({
                   <input
                     type="number"
                     min={1}
-                    max={24}
+                    max={30}
                     step={1}
                     disabled={!batteryEnabled || !value.batteryReAlertEnabled}
-                    value={value.batteryReAlertHours ?? 6}
+                    value={value.batteryReAlertDays ?? 7}
                     onChange={(e) =>
                       update(
-                        'batteryReAlertHours',
-                        Math.max(1, Math.min(24, Number(e.target.value) || 6)),
+                        'batteryReAlertDays',
+                        Math.max(1, Math.min(30, Number(e.target.value) || 7)),
                       )
                     }
                   />
-                  <span className="num-input-suffix">時間ごと</span>
+                  <span className="num-input-suffix">日ごと</span>
                 </div>
                 <p className="alert-help muted">
-                  バッテリー残量がしきい値を下回り続けている間、指定した時間ごとに再アラートを発火します（最大 24 時間）。OFF の場合は最初に下回ったときのみ。
+                  バッテリー残量がしきい値を下回り続けている間、指定した日数ごとに再アラートを発火します（最大 30 日）。OFF の場合は最初に下回ったときのみ。
                 </p>
               </div>
             </fieldset>

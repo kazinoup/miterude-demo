@@ -27,9 +27,10 @@ type Props = {
 }
 
 const OFFLINE_PRESETS: { label: string; minutes: number }[] = [
-  { label: '30 分', minutes: 30 },
   { label: '1 時間', minutes: 60 },
+  { label: '3 時間', minutes: 180 },
   { label: '6 時間', minutes: 360 },
+  { label: '12 時間', minutes: 720 },
   { label: '24 時間', minutes: 1440 },
 ]
 
