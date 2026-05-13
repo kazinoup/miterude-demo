@@ -75,11 +75,53 @@ function readJson<T>(key: string, fallback: T): T {
   }
 }
 
+/** localStorage quota 超過時に犠牲にできるキー（古い順に削除）。
+ *  audit_logs が最も肥大しやすいので最優先で落とす。 */
+const EVICTABLE_KEYS = [
+  'miterude:admin:audit_logs',
+]
+
+function isQuotaError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false
+  return (
+    e.name === 'QuotaExceededError' ||
+    e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    /quota/i.test(e.message)
+  )
+}
+
 function writeJson<T>(key: string, value: T): void {
+  const json = JSON.stringify(value, replacer)
   try {
-    localStorage.setItem(key, JSON.stringify(value, replacer))
+    localStorage.setItem(key, json)
+    return
   } catch (e) {
-    console.warn('[miterude-admin] write failed:', key, e)
+    if (!isQuotaError(e)) {
+      console.warn('[miterude-admin] write failed:', key, e)
+      return
+    }
+    // quota 超過: 犠牲キーを 1 つずつ落としてリトライ
+    for (const evict of EVICTABLE_KEYS) {
+      if (evict === key) continue
+      try {
+        localStorage.removeItem(evict)
+      } catch {
+        /* noop */
+      }
+      try {
+        localStorage.setItem(key, json)
+        console.warn(
+          `[miterude-admin] quota recovered by evicting ${evict}, key=${key}`,
+        )
+        return
+      } catch (e2) {
+        if (!isQuotaError(e2)) {
+          console.warn('[miterude-admin] write failed after eviction:', key, e2)
+          return
+        }
+      }
+    }
+    console.warn('[miterude-admin] write failed (quota, unrecoverable):', key)
   }
 }
 
@@ -208,8 +250,33 @@ export function loadAuditLogs(): StaffAuditLogStore {
   return readJson<StaffAuditLogStore>(KEY_AUDIT, {})
 }
 
+/** localStorage は容量制限がきついため、監査ログは最新 100 件だけキャッシュする。
+ *  AdminAuditView の一覧表示は Supabase 側から都度取り直す前提（fetchAuditLogsList）。 */
+const AUDIT_LOG_LOCALSTORAGE_CAP = 100
+
 export function saveAuditLogs(store: StaffAuditLogStore): void {
-  writeJson(KEY_AUDIT, store)
+  const all = Object.values(store)
+  if (all.length <= AUDIT_LOG_LOCALSTORAGE_CAP) {
+    writeJson(KEY_AUDIT, store)
+    return
+  }
+  // 新しい順にソートして上位だけ保存
+  const sorted = [...all].sort((a, b) => {
+    const ta =
+      a.occurredAt instanceof Date
+        ? a.occurredAt.getTime()
+        : new Date(a.occurredAt as unknown as string).getTime()
+    const tb =
+      b.occurredAt instanceof Date
+        ? b.occurredAt.getTime()
+        : new Date(b.occurredAt as unknown as string).getTime()
+    return tb - ta
+  })
+  const capped: StaffAuditLogStore = {}
+  for (const e of sorted.slice(0, AUDIT_LOG_LOCALSTORAGE_CAP)) {
+    capped[e.id] = e
+  }
+  writeJson(KEY_AUDIT, capped)
 }
 
 export function appendAuditLog(
