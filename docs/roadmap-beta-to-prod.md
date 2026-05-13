@@ -1,0 +1,307 @@
+# Miterude β版 → 本番リリース ロードマップ
+
+最終更新: 2026-05-13  
+ステータス: 計画段階。Phase 1.x の機能実装は完了済み（push 済み）。
+
+---
+
+## 1. 全体方針
+
+### 環境構成
+
+```
+miterude-demo  (現 Supabase)  →  demo.miterude.cloud      開発検証・営業デモ用
+miterude-stg   (新規 Supabase) →  stg.miterude.cloud      β顧客向け実環境（リリース前検証）
+miterude-prod  (新規 Supabase) →  miterude.cloud           本番・β顧客契約後に作成
+```
+
+- **「β = 機能フラグ / UI バッジ」**。データの住所は最初から prod に固定し、移行をゼロに保つ
+- **`stg → prod` は同一コードで env vars を切り替えるだけ**でリリース可能にする
+- ステージング命名は `stg`（ツクルデと揃える）
+
+### 認証方針
+
+- Supabase Auth（マジックリンク + パスワード）を採用
+- ツクルデとの SSO は当面なし。データ連携は **API キー方式の REST API** で対応
+- 将来 Clerk 統合に切替可能な構造で実装
+
+### ツクルデ連携の経路（β1 では API キーのみ）
+
+```
+[ツクルデ] --(X-Api-Key)--> [ミテルデ Edge Function /api/v1/*] --> Supabase
+```
+
+---
+
+## 2. β リリース必須タスク（β-0 〜 β-9）
+
+### β-0: stg 環境構築
+
+- [ ] `miterude-stg` Supabase 作成（Tokyo / Free） — **user 側作業**
+- [ ] migrations 0001〜0037 を stg に順次適用
+- [ ] Edge Functions 7 個を stg にデプロイ
+  - webhook-milesight / parse-inbox / send-notification / dispatch-notifications
+  - send-notification-test / dispatch-report-schedules / detect-status-alerts
+- [ ] pg_cron 3 本を stg で再構成（dispatch-notifications / detect-status-alerts / parse-inbox）
+- [ ] Resend secrets を stg Edge Function Secrets に設定
+- [ ] stg 上で smoke test（webhook 受信 → readings → alert → 通知）
+
+### β-1: RLS 厳格化 🔴
+
+- [ ] **設計**: `organization_id` ベースの policy 雛形を作成
+- [ ] **全テーブル**の policy を `using (organization_id = (auth.jwt() ->> 'org_id')::uuid)` に置換
+  - organizations / users / organization_members
+  - devices / sensor_props / gateway_props / sensor_categories / sensor_groups
+  - sensor_readings / sensor_notes / alert_logs / dashboard_checkins
+  - notification_groups / notification_deliveries
+  - report_schedules / report_delivery_links
+  - manufacturer_integrations / webhook_inbox
+  - manual_categories / manual_pages
+- [ ] 暫定 policy（`webhook_inbox select tmp` 等）を全廃
+- [ ] super_admin / staff 用の特例 policy（service_role bypass）
+- [ ] stg でテナント横断アクセス検証（負のテスト）
+
+### β-2: Supabase Auth 統合 🔴
+
+- [ ] Supabase Auth の providers 設定（email + password）
+- [ ] mock auth の `users.password_hash` カラムを廃止し、`auth.users` を参照
+- [ ] `App.tsx` / `AdminApp.tsx` のセッション取得を `supabase.auth.getSession()` に置換
+- [ ] ログイン画面・パスワード再発行画面の実装
+- [ ] メアド検証フロー
+- [ ] users テーブルと `auth.users` の同期トリガ（DB トリガ or アプリ層）
+- [ ] JWT に `organization_id` claim を埋める（β-1 の RLS と連動）
+- [ ] レート制限（Supabase 標準で OK）
+
+### β-3: Resend 独自ドメイン認証 🔴
+
+- [ ] DNS に SPF / DKIM / DMARC レコード追加（miterude.cloud）
+- [ ] Resend の Domain Verification 完了
+- [ ] `RESEND_FROM=noreply@miterude.cloud` に切替
+- [ ] テスト送信（任意のメアドへ）
+
+### β-4: Vercel カスタムドメイン + env vars 切替 🔴
+
+- [ ] Vercel に `stg.miterude.cloud` / `miterude.cloud`（後で） / `demo.miterude.cloud`（任意）を割当
+- [ ] Vercel env vars を 3 環境分整備
+  - Production: prod Supabase URL / anon key
+  - Preview: stg Supabase URL / anon key
+  - Development: demo Supabase URL / anon key
+- [ ] ブランチ → 環境マッピング（main / stg / feature-\*）
+
+### β-5: β UI / 規約
+
+- [ ] `VITE_BETA_MODE=true` で右上「β」バッジ表示
+- [ ] β 利用規約画面（β期間中につき無償・SLA なし）
+- [ ] β顧客限定の利用上注意 banner
+
+### β-6: β顧客セットアップ手順書
+
+- [ ] `docs/customer-onboarding.md`: テナント作成 → Milesight 連携 → 通知設定の完全手順
+- [ ] MDP 側の Application 作成ガイド（スクショ込み）
+- [ ] よくある質問 / トラブルシュート
+
+### β-7: テストデータ環境
+
+- [ ] **β-7a**: シードジェネレータ Edge Function
+  - normal / with-deviations / with-offline / battery-low の 4 シナリオ
+- [ ] **β-7b**: 合成 webhook ストリーム（pg_cron で 30 分おきに stg / demo へ投入）
+- [ ] **β-7c**: 物理センサー設置（任意・社内テスト用）
+- [ ] **β-7d**: Webhook 転送機能（Admin Console から prod → stg/demo へリアルタイム転送）
+  - `webhook_forwarding_rules` テーブル + HMAC 再署名ロジック
+  - Admin UI（連携設定タブ内）
+- [ ] **β-7e**: テストデータタブ UI
+  - シナリオ投入ボタン
+  - sensor_readings CSV import
+  - テナント設定 ZIP export / import
+  - webhook_inbox JSON export / replay
+  - データクリアボタン（prod では無効化）
+
+### β-8: メンバー招待フロー
+
+- [ ] `invitations` テーブル（token / expires_at / tenant_role / accepted_at）
+- [ ] 招待メール送信（Resend）
+- [ ] 招待リンク受け入れ画面（既存ログイン or 新規アカウント作成）
+- [ ] Admin Console / テナント側「メンバー管理」画面に「招待」ボタン
+- [ ] 期限切れ・無効化処理
+
+### β-9: ツクルデ連携 API（後追い可）
+
+- [ ] `api_keys` テーブル（organization_id / key_hash / scopes / last_used_at / expires_at）
+- [ ] Admin Console > 連携設定タブで API キー発行 UI
+- [ ] Edge Function `miterude-api` で `X-Api-Key` 検証
+- [ ] REST エンドポイント:
+  - `GET /v1/sensors` / `GET /v1/sensors/:id/readings`
+  - `GET /v1/alerts` / `GET /v1/devices/:id`
+- [ ] ドキュメント（ツクルデ開発者向け README）
+- [ ] レート制限 / 監査ログ
+
+---
+
+## 3. リファクタリング backlog
+
+### 🔒 セキュリティ
+
+- [ ] **🔴 β必須** RLS 厳格化（β-1 と合流）
+- [ ] **🔴 β必須** 暫定 policy 全廃（`*_tmp` 名のもの）
+- [ ] **🔴 β必須** mock auth の password_hash カラム削除
+- [ ] 🟡 webhook_secret のローテーション UI（Admin から再発行可能に）
+- [ ] 🟡 API キーの scopes 厳格化（read-only / read-write の分離）
+- [ ] 🟡 監査ログ（staff_audit_logs）の拡充
+  - センサー作成・削除・通知設定変更を全部記録
+  - tenant 側 admin の操作も対象に
+- [ ] 🟡 CSP / セキュリティヘッダ追加（Vercel `headers` 設定）
+- [ ] 🟡 service_role の使用を最小化（Edge Function 内のみ）
+- [ ] 🟢 パスワードハッシュアルゴリズム見直し（Supabase Auth に任せれば自動的に bcrypt）
+- [ ] 🟢 セッションタイムアウト / リフレッシュトークン期限調整
+- [ ] 🟢 SSRF 対策（Webhook 配信先 URL の検証）
+- [ ] 🟢 個人情報の取扱規程 / 削除リクエスト対応
+
+### ⚡ パフォーマンス
+
+- [ ] **🔴 β必須** `fetchAllPaged` 未適用箇所の発見と修正
+  - 既に `sensor_readings` / `alert_logs` / `sensor_notes` / `dashboard_checkins` / `devices` / `gateways` は対応済み
+  - 他に 1000 件超え得る箇所がないか再点検
+- [ ] 🟡 sensor_readings のインデックス見直し（`(sensor_id, measured_at DESC)` の複合 index）
+- [ ] 🟡 古い sensor_readings のアーカイブ戦略（pg_partman でパーティション化、または別テーブルに月次集計）
+- [ ] 🟡 React 不要な再レンダー削減
+  - DashboardView / SensorsView の useMemo / React.memo 適用
+  - 大量データの仮想スクロール（react-window 等）
+- [ ] 🟡 Recharts のデータ間引き（30 分粒度を 1 時間に集約してプロット）
+- [ ] 🟡 Realtime 購読範囲の最適化（dashboard 表示中のセンサーだけ subscribe）
+- [ ] 🟢 Vite ビルドサイズ最適化（dynamic import / code splitting）
+- [ ] 🟢 画像最適化（センサーカタログ画像を WebP 化）
+- [ ] 🟢 Lighthouse スコアで Web Vitals 計測 → 改善
+- [ ] 🟢 Supabase の DB 接続プーリング設定
+
+### 🛠 メンテナンス
+
+- [ ] **🔴 β必須** Sentry 統合（エラー監視）
+- [ ] 🔴 β必須 環境変数管理ポリシー整備（どこに何の secret を置くか）
+- [ ] 🟡 GitHub Actions CI/CD
+  - PR で typecheck / lint / build 自動実行
+  - stg ブランチ push で stg Supabase に migrations 自動適用 + Edge Function デプロイ
+  - main ブランチ push で prod に同上
+- [ ] 🟡 自動テスト
+  - Vitest（lib ユニットテスト）
+  - Playwright（E2E: ログイン → ダッシュボード → 設定保存）
+  - Deno test（Edge Function ユニットテスト）
+- [ ] 🟡 構造化ログ（`console.log` を logger 抽象化、Sentry 連動）
+- [ ] 🟡 型定義の整理（`src/types.ts` が肥大化 → ドメイン別に分割）
+- [ ] 🟡 古い localStorage コードの削除
+  - notify.ts の buildDefaultIntegrations 等、Supabase 移行で不要になったコード
+  - webhookInbox.ts の loadWebhookInbox / saveWebhookInbox 系（Supabase 直読みに切替済み）
+- [ ] 🟡 依存パッケージ更新（npm-check-updates で定期確認）
+- [ ] 🟡 ドキュメント整備
+  - `docs/architecture.md`: 全体像 / データフロー / Edge Function 一覧
+  - `docs/deploy.md`: stg / prod デプロイ手順
+  - `docs/runbook.md`: 障害対応・ロールバック手順
+  - `docs/customer-onboarding.md`: β顧客セットアップ（β-6 と合流）
+- [ ] 🟢 命名統一（snake_case ↔ camelCase の境界明確化）
+- [ ] 🟢 ESLint / Prettier 設定見直し
+- [ ] 🟢 マイグレーション命名規約 README（連番管理ルール）
+- [ ] 🟢 Slack / Teams 通知（CI 失敗 / デプロイ完了）
+
+### 📊 運用 / 監視
+
+- [ ] 🔴 β必須 Sentry エラー監視（前述）
+- [ ] 🟡 運営ダッシュボード（/admin/dashboard）に運用指標を追加
+  - 過去 24h の cron 実行履歴
+  - Edge Function 実行回数 / 失敗率
+  - Resend 配信率
+  - Supabase Egress 使用量
+- [ ] 🟡 顧客向けステータスページ（status.miterude.cloud）
+- [ ] 🟢 ログ集約（Supabase Logs を BigQuery / Datadog に出力）
+- [ ] 🟢 SLO / SLA の定義（β 後の正式版で）
+
+---
+
+## 4. 後追い候補（β リリース後）
+
+### 機能
+
+- Clerk 統合（ツクルデとの SSO）
+- Stripe 課金（β → 有料への切替）
+- マルチセンサー / マルチメーカー対応
+  - Milesight 他モデル（扉開閉・漏水・占有率）
+  - IoT Mobile 連携
+  - 一般 LoRaWAN（Helium / TTN）
+- HACCP 帳票テンプレート
+- 異常検知（統計ベース or ML）
+- グラフのアノテーション（運用メモの可視化）
+- モバイルアプリ（PWA / Native）
+
+### ビジネス
+
+- セルフサーブ申込フォーム（4.2）
+- 14 日無料トライアル
+- リファラル / 紹介プログラム
+- 多言語対応（英語）
+
+### データ
+
+- 古い readings の自動アーカイブ（パーティション・S3 出力）
+- データエクスポートのフル機能化（全テナント設定 / 全期間 readings / 全アラート）
+
+---
+
+## 5. 関連メモ
+
+### マイグレーション番号管理
+
+- 連番は 0001 から開始、`{NNNN}_{snake_case_description}.sql`
+- 複数開発者になる際は番号衝突を避けるため、新規作成前に Slack / Issue で番号宣言
+
+### Edge Function 一覧（現在）
+
+| 関数 | 役割 | トリガ |
+|---|---|---|
+| webhook-milesight | Milesight MDP からの webhook 受信 | MDP からの HTTP POST |
+| parse-inbox | webhook_inbox の pending を一括処理 | 10 分おき pg_cron |
+| send-notification | 単一 delivery を Email/Slack/Webhook に送信 | dispatch-notifications から |
+| dispatch-notifications | pending deliveries を捌くワーカー | 1 分おき pg_cron |
+| send-notification-test | テスト送信（履歴に残らない） | UI から手動 |
+| dispatch-report-schedules | レポート定期配信 | （未実装、Phase 1.8 後継） |
+| detect-status-alerts | オフライン検知 + 再アラート + 復帰 | 10 分おき pg_cron |
+
+### Supabase MCP の使い方（運用時）
+
+- Claude Code から各環境の project_id を指定して操作
+- 主要コマンド: `apply_migration` / `deploy_edge_function` / `execute_sql` / `list_edge_functions`
+- credentials は inoue のみが保有
+
+---
+
+## 6. タイムライン（目安）
+
+```
+Week 1   β-0: stg 構築
+         β-7d: Webhook 転送（検証データを stg に流す土台）
+         β-7a/b: シードジェネレータ + 合成ストリーム
+
+Week 2   β-1: RLS 厳格化（最大ヤマ）
+         β-2: Supabase Auth 統合
+
+Week 3   β-3: Resend ドメイン認証
+         β-4: Vercel ドメイン設定
+         β-5/6: β バッジ + 規約 + 手順書
+         β-7e: テストデータタブ UI
+
+Week 4   β-8: メンバー招待
+         セキュリティ・パフォーマンス必須項目
+         Sentry 統合
+         CI/CD（GitHub Actions）
+
+Week 5+  β-9 ツクルデ連携 API
+         miterude-prod 作成 + 移行
+         β顧客への提供開始
+```
+
+ペース感: フルタイム作業で **4〜5 週間**、合間に他業務がある場合は **6〜8 週間**。
+
+---
+
+## 7. 進捗トラッキング
+
+このドキュメントは生きた仕様書。**完了したタスクには `[x]` を入れる**運用で、いつでも残タスクが見える状態に保つ。
+
+該当する PR / commit ハッシュをリンクで残すとさらに追跡しやすい。
