@@ -246,37 +246,23 @@ export function activeAssignmentsOfStaff(
 
 /* ---------- Staff Audit Logs ---------- */
 
+/** 監査ログは localStorage には保持しない（容量逼迫の原因になるため）。
+ *  AdminAuditView は Supabase から都度フェッチ（fetchAuditLogsList）する前提。
+ *  互換のためのスタブ。 */
 export function loadAuditLogs(): StaffAuditLogStore {
-  return readJson<StaffAuditLogStore>(KEY_AUDIT, {})
+  return {}
 }
 
-/** localStorage は容量制限がきついため、監査ログは最新 100 件だけキャッシュする。
- *  AdminAuditView の一覧表示は Supabase 側から都度取り直す前提（fetchAuditLogsList）。 */
-const AUDIT_LOG_LOCALSTORAGE_CAP = 100
-
-export function saveAuditLogs(store: StaffAuditLogStore): void {
-  const all = Object.values(store)
-  if (all.length <= AUDIT_LOG_LOCALSTORAGE_CAP) {
-    writeJson(KEY_AUDIT, store)
-    return
+/** 監査ログは localStorage に書き込まない（no-op）。
+ *  - 書き込みが必要なときは appendAuditLogInSupabase 経由で Supabase に直接書く。
+ *  - 旧データの掃除は AdminApp ハイドレーションで removeItem 実行済み。 */
+export function saveAuditLogs(_store: StaffAuditLogStore): void {
+  // 念のためレガシーキーの掃除
+  try {
+    localStorage.removeItem(KEY_AUDIT)
+  } catch {
+    /* noop */
   }
-  // 新しい順にソートして上位だけ保存
-  const sorted = [...all].sort((a, b) => {
-    const ta =
-      a.occurredAt instanceof Date
-        ? a.occurredAt.getTime()
-        : new Date(a.occurredAt as unknown as string).getTime()
-    const tb =
-      b.occurredAt instanceof Date
-        ? b.occurredAt.getTime()
-        : new Date(b.occurredAt as unknown as string).getTime()
-    return tb - ta
-  })
-  const capped: StaffAuditLogStore = {}
-  for (const e of sorted.slice(0, AUDIT_LOG_LOCALSTORAGE_CAP)) {
-    capped[e.id] = e
-  }
-  writeJson(KEY_AUDIT, capped)
 }
 
 export function appendAuditLog(
@@ -292,8 +278,9 @@ export function newId(_prefix = 'id'): string {
   return crypto.randomUUID()
 }
 
-/** 監査ログを 1 件記録するヘルパ（保存まで一気にやる）。
- *  Supabase が設定されていれば fire-and-forget で Supabase 側にも書き込む。 */
+/** 監査ログを 1 件記録するヘルパ。
+ *  - localStorage には書かない（容量保全のため）。
+ *  - Supabase に fire-and-forget で書き込む。失敗しても本体動作には影響させない。 */
 export function logStaffAction(params: {
   staffUserId: string
   organizationId?: string
@@ -312,10 +299,7 @@ export function logStaffAction(params: {
     metadata: params.metadata,
     occurredAt: new Date(),
   }
-  const store = loadAuditLogs()
-  saveAuditLogs(appendAuditLog(store, entry))
 
-  // Supabase 同期は fire-and-forget。失敗しても本体動作には影響させない。
   void (async () => {
     try {
       const supabaseModule = await import('../../lib/supabaseQueries')

@@ -8,14 +8,15 @@
  * Phase F 以降で Webhook 受信や設定変更も監査対象にする想定なので、
  * action ラベルの辞書は拡張しやすいよう Map で持つ。
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { History, Search, Filter as FilterIcon } from 'lucide-react'
 import {
-  loadAuditLogs,
   loadOrganizations,
   loadStaffAssignments,
   loadUsers,
 } from '../lib/adminStorage'
+import { fetchAuditLogsList } from '../../lib/supabaseQueries'
+import type { StaffAuditLog } from '../../types'
 
 type Props = {
   /** 指定があれば、その組織に対する操作だけに固定で絞り込む（テナント詳細タブから再利用） */
@@ -101,9 +102,35 @@ export function AdminAuditView({
   const [actionFilter, setActionFilter] = useState('')
   const [search, setSearch] = useState('')
   const [orgFilter, setOrgFilter] = useState('')
+  // 監査ログは localStorage には保持せず Supabase から都度フェッチする
+  // （audit_logs は件数が伸びるため localStorage 容量を圧迫する）
+  const [logs, setLogs] = useState<StaffAuditLog[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setLoadError(null)
+    fetchAuditLogsList({ limit: 1000 })
+      .then((list) => {
+        if (cancelled) return
+        setLogs(list)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        console.warn('[audit-view] fetch failed', e)
+        setLoadError('監査ログの取得に失敗しました')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const { rows, totalCount } = useMemo(() => {
-    const logs = loadAuditLogs()
     const users = loadUsers()
     const orgs = loadOrganizations()
     // Phase 1.5a: super_admin 以外は staff_assignments を見て割当て済 org のみ
@@ -119,7 +146,7 @@ export function AdminAuditView({
           .map((a) => a.organizationId),
       )
     })()
-    const all = Object.values(logs)
+    const all = logs
       .filter((l) =>
         fixedOrganizationId ? l.organizationId === fixedOrganizationId : true,
       )
@@ -145,7 +172,7 @@ export function AdminAuditView({
         return bt - at
       })
     return { rows: all, totalCount: all.length }
-  }, [fixedOrganizationId, viewerUserId, isSuperAdmin])
+  }, [logs, fixedOrganizationId, viewerUserId, isSuperAdmin])
 
   const orgOptions = useMemo(() => {
     const set = new Set<string>()
@@ -284,9 +311,13 @@ export function AdminAuditView({
                   colSpan={fixedOrganizationId ? 4 : 5}
                   className="admin-table-empty"
                 >
-                  {totalCount === 0
-                    ? 'まだ監査ログがありません。'
-                    : '一致する監査ログがありません。フィルタを見直してください。'}
+                  {loading
+                    ? '監査ログを読み込み中…'
+                    : loadError
+                      ? loadError
+                      : totalCount === 0
+                        ? 'まだ監査ログがありません。'
+                        : '一致する監査ログがありません。フィルタを見直してください。'}
                 </td>
               </tr>
             )}

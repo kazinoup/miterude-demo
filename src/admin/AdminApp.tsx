@@ -25,13 +25,11 @@ import {
   saveOrganizations,
   saveOrganizationMembers,
   saveStaffAssignments,
-  saveAuditLogs,
   saveManualCategories,
   saveManualPages,
 } from './lib/adminStorage'
 import { globalUnmatchedDeviceCount } from './lib/webhookInbox'
 import {
-  fetchAuditLogsList,
   fetchManualCategoriesList,
   fetchManualPagesList,
   fetchMembersList,
@@ -55,7 +53,6 @@ import type {
   OrganizationMemberStore,
   OrganizationStore,
   StaffAssignmentStore,
-  StaffAuditLogStore,
   UserSession,
 } from '../types'
 
@@ -123,7 +120,6 @@ export function AdminApp({ session }: Props) {
           usersList,
           membersList,
           assignList,
-          auditList,
           orgsList,
           manualCatsList,
           manualPagesList,
@@ -131,7 +127,6 @@ export function AdminApp({ session }: Props) {
           fetchUsersList(),
           fetchMembersList(),
           fetchStaffAssignmentsList(),
-          fetchAuditLogsList({ limit: 1000 }),
           fetchOrganizationsList(),
           fetchManualCategoriesList().catch(() => [] as ManualCategoryStore[keyof ManualCategoryStore][]),
           fetchManualPagesList().catch(() => [] as ManualPageStore[keyof ManualPageStore][]),
@@ -170,11 +165,16 @@ export function AdminApp({ session }: Props) {
         for (const m of membersList) memberStore[m.id] = m
         const assignStore: StaffAssignmentStore = {}
         for (const a of assignList) assignStore[a.id] = a
-        const auditStore: StaffAuditLogStore = {}
-        for (const l of auditList) auditStore[l.id] = l
         saveOrganizationMembers(memberStore)
         saveStaffAssignments(assignStore)
-        saveAuditLogs(auditStore)
+        // 監査ログは localStorage 容量を圧迫するため永続化しない。
+        // AdminAuditView 側で Supabase から都度フェッチする。
+        // 既存ユーザー向けに古い肥大エントリを一度だけ掃除。
+        try {
+          localStorage.removeItem('miterude:admin:audit_logs')
+        } catch {
+          /* noop */
+        }
 
         // Manual は Supabase が真値で置き換え（全テナント共通コンテンツ）
         const manualCatStore: ManualCategoryStore = {}
