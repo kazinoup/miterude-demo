@@ -1,6 +1,6 @@
 # Miterude β版 → 本番リリース ロードマップ
 
-最終更新: 2026-05-13  
+最終更新: 2026-05-14  
 ステータス: 計画段階。Phase 1.x の機能実装は完了済み（push 済み）。
 
 ---
@@ -135,6 +135,54 @@ miterude-prod  (新規 Supabase) →  miterude.cloud           本番・β顧客
 - [ ] ドキュメント（ツクルデ開発者向け README）
 - [ ] レート制限 / 監査ログ
 
+### β-10: 電話通知（Twilio Programmable Voice + 組込 TTS）
+
+お客様要望対応。逸脱・オフライン等のクリティカル通知を電話で読み上げる
+（こちらからの一方的読み上げのみ。応答受付・IVR はスコープ外）。
+
+採用構成: **Twilio Programmable Voice + AWS Polly Neural（`Mizuki` / `Takumi`）**
+- 双方向エージェント不要のため ElevenLabs / Conversational AI は使わない
+- TwiML を inline で渡し、`<Say language="ja-JP" voice="Polly.Mizuki-Neural">…</Say>` で
+  その場で日本語ニューラル音声合成 → 切断
+- LLM 学習量が多くバイブコーディングと最も相性が良い構成
+
+#### β-10a: 事前準備（user 側作業）
+
+- [ ] Twilio アカウント開設・本人確認（KDDI Web Communications 経由）
+- [ ] 発信元番号取得（日本 0ABJ または海外番号 + 国際発信）
+- [ ] 月額予算・1 通知あたり同時発信数の上限を決める
+
+#### β-10b: バックエンド実装
+
+- [ ] Edge Function Secrets 登録
+  - `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER`
+- [ ] DB migrations
+  - `notification_groups` に voice チャネル種別を追加（既存 email/slack/webhook と並列）
+  - `users` または連絡先テーブルに `phone_e164` カラム（E.164 形式、例: `+819012345678`）
+- [ ] `send-notification` Edge Function を voice 対応に拡張
+  - Twilio REST API `POST /Accounts/{sid}/Calls.json` を呼ぶ
+  - TwiML を inline 渡し（外部 URL ホスティング不要）
+  - 失敗時の HTTP ステータス・SID を `notification_deliveries` に記録
+- [ ] TwiML 文面テンプレート（センサー名 / 値 / しきい値 / 時刻を埋め込み）
+  - 単位の読みを最適化（`℃` → 「ど」、`-` → 「マイナス」）
+  - SSML `<break time="500ms"/>` で間を取って聞き取りやすく
+- [ ] 通話料金の概算ログ（1 通知あたり試算値を delivery に記録）
+
+#### β-10c: フロントエンド実装
+
+- [ ] 通知グループ設定 UI に「電話」チャネル追加
+- [ ] 連絡先入力に電話番号フィールド（国番号セレクタ + E.164 バリデーション）
+- [ ] 通知タイミング設定に「電話のみ深夜帯抑制（22:00–07:00）」のトグル
+- [ ] テスト送信タブに「電話発信テスト」追加（β-7e と合流）
+- [ ] 配信履歴ビューで voice 種別を表示・通話状態（completed/busy/no-answer/failed）を表示
+
+#### β-10d: 運用ガード
+
+- [ ] レート制限: 1 アラートあたり最大 N 件の電話発信に制限
+- [ ] 月間予算アラート（Twilio 残高 / 通話料金推定が閾値超過で Admin に通知）
+- [ ] 利用規約に「通話料金は当社負担、ただしβ期間中は通知件数を月◯件まで」等の上限明記
+- [ ] 障害時フォールバック: 電話発信失敗時は同じ宛先のメール通知を自動送信
+
 ---
 
 ## 3. リファクタリング backlog
@@ -257,7 +305,7 @@ miterude-prod  (新規 Supabase) →  miterude.cloud           本番・β顧客
 |---|---|---|
 | webhook-milesight | Milesight MDP からの webhook 受信 | MDP からの HTTP POST |
 | parse-inbox | webhook_inbox の pending を一括処理 | 10 分おき pg_cron |
-| send-notification | 単一 delivery を Email/Slack/Webhook に送信 | dispatch-notifications から |
+| send-notification | 単一 delivery を Email/Slack/Webhook/Voice に送信 | dispatch-notifications から |
 | dispatch-notifications | pending deliveries を捌くワーカー | 1 分おき pg_cron |
 | send-notification-test | テスト送信（履歴に残らない） | UI から手動 |
 | dispatch-report-schedules | レポート定期配信 | （未実装、Phase 1.8 後継） |
@@ -292,11 +340,14 @@ Week 4   β-8: メンバー招待
          CI/CD（GitHub Actions）
 
 Week 5+  β-9 ツクルデ連携 API
+         β-10 電話通知（Twilio + Polly Neural）
          miterude-prod 作成 + 移行
          β顧客への提供開始
 ```
 
 ペース感: フルタイム作業で **4〜5 週間**、合間に他業務がある場合は **6〜8 週間**。
+β-10 は事前準備（Twilio 開設・本人確認）の待ち時間が読めないため、上記タイムラインとは
+並行進行するイメージ（user 側の手続きと並行して実装を進める）。
 
 ---
 
