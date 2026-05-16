@@ -14,6 +14,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { judgeAndInsertAlert } from '../_shared/alertDetection.ts'
+import { mapModel } from '../_shared/modelMap.ts'
 
 const MANUFACTURER = 'Milesight'
 const TIMESTAMP_TOLERANCE_SEC = 300 // 5 分
@@ -83,25 +84,7 @@ function toNumber(v: unknown): number | null {
 }
 
 // ===== model → device_type / role のマッピング ============================
-// src/lib/supportedDevices.ts と同期させること。
-type DeviceTypeRole = { device_type: 'sensor' | 'gateway'; role: string }
-const MODEL_MAP: Record<string, DeviceTypeRole> = {
-  'EM320-TH':        { device_type: 'sensor', role: 'temperature-humidity' },
-  'EM320-TH-MAGNET': { device_type: 'sensor', role: 'temperature-humidity' },
-  'AM102':           { device_type: 'sensor', role: 'temperature-humidity' },
-  'EM300-TH':        { device_type: 'sensor', role: 'temperature-humidity' },
-  'UG65':            { device_type: 'gateway', role: 'master' },
-  'UG63':            { device_type: 'gateway', role: 'relay' },
-}
-function mapModel(model: string): DeviceTypeRole | null {
-  if (!model) return null
-  if (MODEL_MAP[model]) return MODEL_MAP[model]
-  const lower = model.toLowerCase()
-  for (const [k, v] of Object.entries(MODEL_MAP)) {
-    if (lower.startsWith(k.toLowerCase() + '-')) return v
-  }
-  return null
-}
+// _shared/modelMap.ts に集約（parse-inbox と共通）。機種追加はそちらを編集。
 
 // ===== Parser ====================================================
 
