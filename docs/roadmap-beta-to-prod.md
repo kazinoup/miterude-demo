@@ -93,14 +93,42 @@
 
 ### β-2: Supabase Auth 統合 🔴 ◀ 次に着手（β-1 の前提）
 
-- [ ] Supabase Auth の providers 設定（email + password）
-- [ ] mock auth の `users.password_hash` カラムを廃止し、`auth.users` を参照
-- [ ] `App.tsx` / `AdminApp.tsx` のセッション取得を `supabase.auth.getSession()` に置換
-- [ ] ログイン画面・パスワード再発行画面の実装
-- [ ] メアド検証フロー
-- [ ] users テーブルと `auth.users` の同期トリガ（DB トリガ or アプリ層）
-- [ ] JWT に `organization_id` claim を埋める（β-1 の RLS と連動）
-- [ ] レート制限（Supabase 標準で OK）
+**確定設計（user 承認済み 2026-05-16）**
+
+- 認証: Supabase Auth（email + password）
+- 紐付け: **`users.auth_user_id` カラム方式**（`users.id` は不変・FK 無傷、
+  RLS は `auth.uid() = users.auth_user_id` で評価）。id 統一は FK カスケード地獄のため不採用
+- マルチテナント: **B1 アクティブ org 再発行**（`users.active_organization_id` +
+  切替時 `refreshSession()`）
+- impersonation: **A custom claim 方式**（`impersonation_sessions` テーブル +
+  Custom Access Token Hook が有効レコードを見て `impersonating_org_id` claim 注入）
+- 移行: **stg 先行・dev は mock-login 温存**（退避路確保）
+
+**JWT claim（Custom Access Token Hook で注入）**
+- `app_role`: super_admin / support / editor / dashboard_confirmer
+- `org_id`: tenant の active_organization_id（なければ所属先頭）
+- `impersonating_org_id`: 有効な impersonation_sessions があれば target org
+- RLS は β-1 で `organization_id = coalesce(impersonating_org_id, org_id)` 系に置換
+
+**実装タスク分解**
+
+- [ ] **β-2a** migration: `users.auth_user_id` / `users.active_organization_id` /
+  `impersonation_sessions` テーブル（stg に適用）
+- [ ] **β-2b** Custom Access Token Hook（Postgres 関数）+ Supabase Auth 設定
+  （email provider 有効化、Hook 登録）（stg）
+- [ ] **β-2c** 既存ユーザーを `auth.users` に移行（スタッフ + β顧客、Admin/SQL）（stg）
+- [ ] **β-2d** フロント改修（stg ブランチ）
+  - `supabase.ts`: `persistSession:true, autoRefreshToken:true`
+  - `LoginView`: mock-login fetch → `supabase.auth.signInWithPassword()`
+  - `App`/`AdminApp`: `loadAuthSession()` → `getSession()`/`onAuthStateChange()`、
+    kind 判定を JWT claim ベースに
+  - `impersonation.ts`: localStorage 退避 → impersonation_sessions + `refreshSession()`
+  - テナント切替: active_organization_id 更新 RPC + `refreshSession()`
+  - ログアウト: `supabase.auth.signOut()`
+- [ ] **β-2e** stg 全フロー検証（スタッフ/テナント/マルチ切替/impersonation/logout）
+  + 1〜2 テーブルで JWT ベース RLS を試験適用し claim が効くことを実証
+- [ ] **β-2f** dev/main 展開（`mock-login` Edge Function と `password_hash` カラム
+  撤去は最後。dev は β-2e 完了まで mock 温存）
 
 ### β-3: Resend 独自ドメイン認証 ✅ 完了（2026-05-16）
 
