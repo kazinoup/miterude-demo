@@ -253,6 +253,15 @@ app_metadata に注入することを SQL レベルで実証済み。
 - [x] **β-2c** stg 検証ユーザー 3 名を SQL 直接投入（auth.users/identities +
   public.users + organization_members）。Hook が claim を注入することを SQL 実証。
   ※本番ユーザー移行は β-2f/本番時に招待フローで別途。検証シードは migration 化しない
+  - ⚠️ **既知の落とし穴（2026-05-19 stg で顕在）**: `auth.users` を SQL 直接
+    投入すると `confirmation_token` / `recovery_token` /
+    `email_change_token_new` / `email_change`（+ `email_change_token_current`
+    / `phone_change` / `phone_change_token` / `reauthentication_token`）が
+    NULL のままになり、GoTrue がログイン時に
+    `Scan error ... converting NULL to string is unsupported` → 500
+    （"Database error querying schema"）で全ユーザー認証不可になる。
+    **シード時にこれらを `''`（空文字）で投入すること**。stg は事後 UPDATE
+    で修復済。β-2f の dev シードでは最初から `''` を入れる
 - [x] **β-2d** フロント改修（main、コミット `e7ecccf`）
   - `supabase.ts`: `persistSession:true, autoRefreshToken:true`（β-2d-2）
   - `LoginView`: `supabase.auth.signInWithPassword()`
@@ -262,8 +271,12 @@ app_metadata に注入することを SQL レベルで実証済み。
   - ログアウト: `supabase.auth.signOut()`
 - [ ] **β-2e** stg 全フロー検証（スタッフ/テナント/マルチ切替/impersonation/logout）
   + 1〜2 テーブルで JWT ベース RLS を試験適用し claim が効くことを実証
-  - `0042_rls_jwt_trial.sql` 作成済（sensor_notes / dashboard_checkins）。
-    stg 適用 + 実機検証は別途確認
+  - `0042_rls_jwt_trial.sql` 作成・stg 適用済（admin_full も 2 表で撤去）。
+    stg ブランチ push 済（Vercel 自動デプロイ）
+  - auth.users NULL トークン問題（上記 β-2c の落とし穴）を stg で修復、
+    3 検証ユーザーのログイン成功を確認（2026-05-19）
+  - 残: 実機で 1〜8 フロー（ログイン/コンテキスト/切替/impersonation/
+    logout/RLS 負テスト）を inoue が検証
 - [ ] **β-2f** dev/main 展開（`mock-login` Edge Function と `password_hash` カラム
   撤去は最後。dev は β-2e 完了まで mock 温存）
 
