@@ -2,14 +2,49 @@
 
 最終更新: 2026-05-19  
 ステータス: β-0/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
-**β-2d/β-2e 完了**。**β-2f はコード/DB 撤去まで完了**
-（`loadAuthSession` 系撤去 + dev 展開 + 0043 で password_hash DROP +
-mock-login ローカル撤去）。残: デプロイ済 mock-login 関数削除（CLI 手動）
-→ 完了で β-2 全クローズ → β-1（RLS 全テーブル一般化）へ。
+**β-2 全クローズ**（auth フロント `e7ecccf` + 0038-0043 + dev 展開 +
+mock-login Edge Function を stg/dev 両環境で削除確認）。
+次は **β-1（RLS 全テーブル一般化）**。
+
+### β-1 設計方針（β-2 で確立した claim 基盤を全テーブルへ展開）
+
+- スコープ判定: `public.current_org_id() = coalesce(impersonating_org_id,
+  org_id)`（0042 で導入済）。impersonation 中の staff は自然に target org を見る
+- staff バイパス: `public.is_staff()` = `app_role in ('super_admin','support')`。
+  Admin Console が cross-tenant 読みするテーブル（organizations /
+  organization_members / users / staff_* / manual_* / webhook_inbox /
+  notification_groups）に追加
+- service_role: bypassrls で自動バイパス（Edge Function は無影響）
+- 公開共有: `share-dashboard` EF が service_role 利用のため anon 直 SELECT 不要
+
+### β-1 実施フェーズ（小さく刻んで stg 先行検証）
+
+- [x] **A. helpers + alert_logs**: `0044_rls_helpers.sql`（`is_staff()`/
+  `is_super_admin()`）+ `0045_rls_alert_logs.sql`（demo_*/admin_full 撤去 →
+  claim_*）。stg/dev 適用済・両環境で `alert_logs` の policy が
+  `claim_*` 4 本のみに（2026-05-19）
+- [ ] **B. 設定系テナント表**: `sensor_categories` / `sensor_groups` /
+  `notification_groups` / `manufacturer_integrations` /
+  `report_schedules` / `report_delivery_links` を claim ベースへ
+  （`notification_groups` は `is_staff()` バイパス併設）
+- [ ] **C. コアデータ**: `devices` / `sensor_props` / `gateway_props` /
+  `sensor_readings` / `dashboards` を claim ベースへ。webhook-milesight
+  は service_role で無影響、公開共有も EF 経由で無影響を実機確認
+- [ ] **D. 横断系**: `organizations` (id=current OR is_staff) /
+  `organization_members` / `users` / `staff_assignments` /
+  `staff_audit_logs` を `is_staff()` バイパス込みで設計
+- [ ] **E. グローバル + 暫定撤去**: `manual_categories` /
+  `manual_pages`（全テナント read、`is_super_admin()` のみ write）+
+  `webhook_inbox` 暫定 `*_tmp` policy 全廃
+- [ ] **F. 負テスト**: stg で 3 ユーザー × 別組織不可視を全テーブル抜き打ち検証 →
+  通れば dev へ展開 → β-1 完了
 
 ### ▶ 次に再開するとき（中断ポイント: 2026-05-19）
 
-**次の一手 = β-2f（dev を supabase 化 + レガシー撤去）。**
+**次の一手 = β-1（RLS 全テーブル一般化）Phase A（helpers + alert_logs）。**
+
+旧 β-2f メモは下記履歴。β-2f は完了済み（mock-login 削除確認 / 0043
+適用済 / dev 展開済 / 3 ブランチ同期済）。
 
 β-2f の状態と残り:
 - ✅ コード側レガシー撤去（`loadAuthSession`/`saveAuthSession`/
