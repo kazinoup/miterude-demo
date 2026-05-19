@@ -1,25 +1,28 @@
 # Miterude β版 → 本番リリース ロードマップ
 
-最終更新: 2026-05-18  
+最終更新: 2026-05-19  
 ステータス: β-0/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
-**β-2d 完了**（設計確定 + 0041 RPC / authClaims / authSession / supabase.ts
-+ β-2d-3 正攻法 AuthProvider 連動改修 13 ファイル、typecheck/build グリーン、
-コミット `e7ecccf`）。次は β-2e（stg 全フロー検証 + JWT ベース RLS 試験）。
+**β-2d/β-2e 完了**。**β-2f はコード/DB 撤去まで完了**
+（`loadAuthSession` 系撤去 + dev 展開 + 0043 で password_hash DROP +
+mock-login ローカル撤去）。残: デプロイ済 mock-login 関数削除（CLI 手動）
+→ 完了で β-2 全クローズ → β-1（RLS 全テーブル一般化）へ。
 
-### ▶ 次に再開するとき（中断ポイント: 2026-05-18）
+### ▶ 次に再開するとき（中断ポイント: 2026-05-19）
 
-**次の一手 = β-2e（stg 実機での全フロー検証 + 1〜2 テーブルで
-JWT claim ベース RLS 試験）。**
+**次の一手 = β-2f（dev を supabase 化 + レガシー撤去）。**
 
-β-2e 手順:
-1. `stg` ブランチへ `main` を merge → push（Vercel 自動デプロイ）※デプロイ確認要
-2. `0042_rls_jwt_trial.sql`（sensor_notes / dashboard_checkins を claim
-   ベース RLS に置換）を stg に適用 ※DB 適用確認要
-3. stg 実機で 3 検証ユーザー（inoue@canbright.co.jp /
-   editor@ / confirmer@stg.miterude.cloud、pw `StgTest2026!`）の
-   ログイン / コンテキスト選択 / テナント切替 / impersonation /
-   logout を一通り検証。claim が RLS に効く（他テナント不可視）を確認
-4. 通れば β-2f（dev/main 展開 + mock-login/password_hash 撤去）→ β-1（RLS 全置換）
+β-2f の状態と残り:
+- ✅ コード側レガシー撤去（`loadAuthSession`/`saveAuthSession`/
+  `AuthSession` 型を削除、typecheck/build グリーン）— 本コミットで完了
+- ⏳ 残（いずれも確認要）:
+  1. **dev Supabase 展開**: `0038`/`0039`/`0041`/`0042` を dev
+     （`kktwzllydtlsoahvdhzl`）に適用 + dev 検証ユーザー投入
+     （auth.users の token 列は `''`）+ Custom Access Token Hook を
+     dev で有効化（Supabase ダッシュボード操作）
+  2. **ブランチ同期**: `origin/main` push → `dev` へ merge（Vercel 自動デプロイ）
+  3. **破壊的撤去（最後）**: `mock-login` Edge Function 削除（dev/stg）+
+     `users.password_hash` カラム DROP（migration 化、dev/stg 適用）
+- 完了後 → β-1（RLS 全テーブルを claim ベースへ一般化）
 
 #### β-2d 進捗・確定事項（user 承認済み）
 
@@ -253,6 +256,15 @@ app_metadata に注入することを SQL レベルで実証済み。
 - [x] **β-2c** stg 検証ユーザー 3 名を SQL 直接投入（auth.users/identities +
   public.users + organization_members）。Hook が claim を注入することを SQL 実証。
   ※本番ユーザー移行は β-2f/本番時に招待フローで別途。検証シードは migration 化しない
+  - ⚠️ **既知の落とし穴（2026-05-19 stg で顕在）**: `auth.users` を SQL 直接
+    投入すると `confirmation_token` / `recovery_token` /
+    `email_change_token_new` / `email_change`（+ `email_change_token_current`
+    / `phone_change` / `phone_change_token` / `reauthentication_token`）が
+    NULL のままになり、GoTrue がログイン時に
+    `Scan error ... converting NULL to string is unsupported` → 500
+    （"Database error querying schema"）で全ユーザー認証不可になる。
+    **シード時にこれらを `''`（空文字）で投入すること**。stg は事後 UPDATE
+    で修復済。β-2f の dev シードでは最初から `''` を入れる
 - [x] **β-2d** フロント改修（main、コミット `e7ecccf`）
   - `supabase.ts`: `persistSession:true, autoRefreshToken:true`（β-2d-2）
   - `LoginView`: `supabase.auth.signInWithPassword()`
@@ -260,12 +272,45 @@ app_metadata に注入することを SQL レベルで実証済み。
   - `impersonation.ts`: RPC（start/end_impersonation）+ `refreshClaims()`
   - テナント切替: `set_active_organization` RPC + `refreshClaims()`
   - ログアウト: `supabase.auth.signOut()`
-- [ ] **β-2e** stg 全フロー検証（スタッフ/テナント/マルチ切替/impersonation/logout）
-  + 1〜2 テーブルで JWT ベース RLS を試験適用し claim が効くことを実証
-  - `0042_rls_jwt_trial.sql` 作成済（sensor_notes / dashboard_checkins）。
-    stg 適用 + 実機検証は別途確認
-- [ ] **β-2f** dev/main 展開（`mock-login` Edge Function と `password_hash` カラム
-  撤去は最後。dev は β-2e 完了まで mock 温存）
+- [x] **β-2e** stg 全フロー検証（完了 2026-05-19）
+  - `0042_rls_jwt_trial.sql` stg 適用済（admin_full も 2 表で撤去）+
+    stg ブランチ push 済
+  - auth.users NULL トークン問題（β-2c の落とし穴）を stg で修復
+  - β-2e 検証用テストデータ投入済（demo: sensor 3 + readings 72 +
+    notes 2 + checkin 1 / 別組織 canbright: sensor 1 + readings 24 +
+    note 1 + checkin 1）。固定 UUID（device `1111…d1/d2/d3`・
+    `2222…e1` / note `3333…` / checkin `4444…`）。migration 化しない
+  - 実機で 3 ユーザーの全フロー（ログイン/コンテキスト/切替/
+    impersonation/logout/RLS 負テスト）検証 OK（inoue 確認）
+- [ ] **β-2f** dev 展開 + レガシー撤去
+  - [x] コード側撤去（`loadAuthSession`/`saveAuthSession`/`AuthSession`
+    型を削除。typecheck/build グリーン。コミット `e808898`）
+  - [x] dev に `0038/0039/0041/0042` 適用済（`kktwzllydtlsoahvdhzl`）
+  - [x] dev 検証ユーザー 3 名作成・紐付け済（pw `StgTest2026!`、
+    auth.users token 列は `''`）。Hook 関数が claim を正しく注入
+    することを dev で実証（editor→org_id+editor /
+    inoue→super_admin / confirmer→dashboard_confirmer）
+    - 紐付け: inoue@canbright.co.jp→users `…a001`(super_admin) /
+      editor@stg.miterude.cloud→`…a002`(demo028 editor) /
+      confirmer@stg.miterude.cloud→`…a003`(demo028 dashboard_confirmer)。
+      dev demo org = `…d001`(slug demo028)、別組織 demo086 が負テスト用
+  - [x] `origin/main` push（`392b8d4`、本番デプロイなし）→ `dev` へ
+    merge & push（`97d89a3`）。miterude-dev が dev.miterude.cloud を
+    自動デプロイ（新 Supabase Auth フロー反映）
+  - [x] dev Supabase で Custom Access Token Hook 有効化済 +
+    dev.miterude.cloud で `editor@stg.miterude.cloud` →
+    CBO-028(demo028) テナントログイン成功（2026-05-19）
+  - [x] `0043_drop_mock_password_hash.sql` 作成・stg/dev 適用済
+    （`staff_category` は温存確認）。dev の hash 値は
+    `password_hash_backup_dev_2026-05-19.sql.local`（gitignore）に保全
+  - [x] mock-login Edge Function のローカルソース撤去
+    （`supabase/functions/mock-login/` 削除）
+  - [ ] ⚠️ **要手動**: stg/dev にデプロイ済の `mock-login` 関数を
+    Supabase 側から削除（CLI: `npx supabase functions delete mock-login
+    --project-ref <ref>` で stg(`bejgwwhxntnxzwehsryx`) と
+    dev(`kktwzllydtlsoahvdhzl`) の両方、または各プロジェクトの
+    ダッシュボード Functions タブから Delete）。トークン使用後は revoke。
+    完了で β-2 全クローズ → β-1 へ
 
 ### β-3: Resend 独自ドメイン認証 ✅ 完了（2026-05-16）
 
