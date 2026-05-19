@@ -1,25 +1,27 @@
 # Miterude β版 → 本番リリース ロードマップ
 
-最終更新: 2026-05-18  
+最終更新: 2026-05-19  
 ステータス: β-0/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
-**β-2d 完了**（設計確定 + 0041 RPC / authClaims / authSession / supabase.ts
-+ β-2d-3 正攻法 AuthProvider 連動改修 13 ファイル、typecheck/build グリーン、
-コミット `e7ecccf`）。次は β-2e（stg 全フロー検証 + JWT ベース RLS 試験）。
+**β-2d 完了**（`e7ecccf`）。**β-2e 完了**（stg 実機で 3 ユーザーの
+全フロー検証 OK + sensor_notes/dashboard_checkins の claim RLS 実証、
+テストデータ投入済）。次は β-2f（dev 展開 + mock-login/password_hash 撤去）。
 
-### ▶ 次に再開するとき（中断ポイント: 2026-05-18）
+### ▶ 次に再開するとき（中断ポイント: 2026-05-19）
 
-**次の一手 = β-2e（stg 実機での全フロー検証 + 1〜2 テーブルで
-JWT claim ベース RLS 試験）。**
+**次の一手 = β-2f（dev を supabase 化 + レガシー撤去）。**
 
-β-2e 手順:
-1. `stg` ブランチへ `main` を merge → push（Vercel 自動デプロイ）※デプロイ確認要
-2. `0042_rls_jwt_trial.sql`（sensor_notes / dashboard_checkins を claim
-   ベース RLS に置換）を stg に適用 ※DB 適用確認要
-3. stg 実機で 3 検証ユーザー（inoue@canbright.co.jp /
-   editor@ / confirmer@stg.miterude.cloud、pw `StgTest2026!`）の
-   ログイン / コンテキスト選択 / テナント切替 / impersonation /
-   logout を一通り検証。claim が RLS に効く（他テナント不可視）を確認
-4. 通れば β-2f（dev/main 展開 + mock-login/password_hash 撤去）→ β-1（RLS 全置換）
+β-2f の状態と残り:
+- ✅ コード側レガシー撤去（`loadAuthSession`/`saveAuthSession`/
+  `AuthSession` 型を削除、typecheck/build グリーン）— 本コミットで完了
+- ⏳ 残（いずれも確認要）:
+  1. **dev Supabase 展開**: `0038`/`0039`/`0041`/`0042` を dev
+     （`kktwzllydtlsoahvdhzl`）に適用 + dev 検証ユーザー投入
+     （auth.users の token 列は `''`）+ Custom Access Token Hook を
+     dev で有効化（Supabase ダッシュボード操作）
+  2. **ブランチ同期**: `origin/main` push → `dev` へ merge（Vercel 自動デプロイ）
+  3. **破壊的撤去（最後）**: `mock-login` Edge Function 削除（dev/stg）+
+     `users.password_hash` カラム DROP（migration 化、dev/stg 適用）
+- 完了後 → β-1（RLS 全テーブルを claim ベースへ一般化）
 
 #### β-2d 進捗・確定事項（user 承認済み）
 
@@ -269,16 +271,23 @@ app_metadata に注入することを SQL レベルで実証済み。
   - `impersonation.ts`: RPC（start/end_impersonation）+ `refreshClaims()`
   - テナント切替: `set_active_organization` RPC + `refreshClaims()`
   - ログアウト: `supabase.auth.signOut()`
-- [ ] **β-2e** stg 全フロー検証（スタッフ/テナント/マルチ切替/impersonation/logout）
-  + 1〜2 テーブルで JWT ベース RLS を試験適用し claim が効くことを実証
-  - `0042_rls_jwt_trial.sql` 作成・stg 適用済（admin_full も 2 表で撤去）。
-    stg ブランチ push 済（Vercel 自動デプロイ）
-  - auth.users NULL トークン問題（上記 β-2c の落とし穴）を stg で修復、
-    3 検証ユーザーのログイン成功を確認（2026-05-19）
-  - 残: 実機で 1〜8 フロー（ログイン/コンテキスト/切替/impersonation/
-    logout/RLS 負テスト）を inoue が検証
-- [ ] **β-2f** dev/main 展開（`mock-login` Edge Function と `password_hash` カラム
-  撤去は最後。dev は β-2e 完了まで mock 温存）
+- [x] **β-2e** stg 全フロー検証（完了 2026-05-19）
+  - `0042_rls_jwt_trial.sql` stg 適用済（admin_full も 2 表で撤去）+
+    stg ブランチ push 済
+  - auth.users NULL トークン問題（β-2c の落とし穴）を stg で修復
+  - β-2e 検証用テストデータ投入済（demo: sensor 3 + readings 72 +
+    notes 2 + checkin 1 / 別組織 canbright: sensor 1 + readings 24 +
+    note 1 + checkin 1）。固定 UUID（device `1111…d1/d2/d3`・
+    `2222…e1` / note `3333…` / checkin `4444…`）。migration 化しない
+  - 実機で 3 ユーザーの全フロー（ログイン/コンテキスト/切替/
+    impersonation/logout/RLS 負テスト）検証 OK（inoue 確認）
+- [ ] **β-2f** dev 展開 + レガシー撤去
+  - [x] コード側撤去（`loadAuthSession`/`saveAuthSession`/`AuthSession`
+    型を削除。typecheck/build グリーン）
+  - [ ] dev に `0038/0039/0041/0042` 適用 + dev 検証ユーザー + Hook 有効化
+  - [ ] `origin/main` push → `dev` merge（Vercel 自動デプロイ）
+  - [ ] `mock-login` Edge Function 削除 + `users.password_hash` DROP
+    （migration 化、最後に実施）
 
 ### β-3: Resend 独自ドメイン認証 ✅ 完了（2026-05-16）
 
