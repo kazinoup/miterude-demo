@@ -45,14 +45,23 @@ type Body = {
   clear_existing?: boolean
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  // POST + JSON は preflight が走るため、supabase-js が乗せる
+  // apikey / authorization / x-client-info / content-type を許可。
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Max-Age': '86400',
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Cache-Control': 'no-store',
+      ...CORS_HEADERS,
     },
   })
 }
@@ -111,7 +120,10 @@ function baseline(measuredAt: Date, baseT: number, baseH: number) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return jsonResponse({ ok: true })
+  if (req.method === 'OPTIONS') {
+    // preflight: status 204 + CORS ヘッダのみ（body 不要）
+    return new Response(null, { status: 204, headers: CORS_HEADERS })
+  }
   if (req.method !== 'POST') {
     return jsonResponse({ ok: false, error: 'method-not-allowed' }, 405)
   }
