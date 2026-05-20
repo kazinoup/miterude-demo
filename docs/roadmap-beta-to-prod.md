@@ -1,10 +1,11 @@
 # Miterude β版 → 本番リリース ロードマップ
 
 最終更新: 2026-05-19  
-ステータス: β-0/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
-**β-2 全クローズ**（auth フロント `e7ecccf` + 0038-0043 + dev 展開 +
-mock-login Edge Function を stg/dev 両環境で削除確認）。
-次は **β-1（RLS 全テーブル一般化）**。
+ステータス: β-0/β-1/β-2/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
+**β-1 全クローズ**（0044〜0051、モック期 `admin_full=true` 全撤去、
+全テーブル claim ベース。share-report EF で公開レポート復活。
+Phase F = stg 実機負テスト OK）。
+次は β-5/6/7 系（UI/規約・手順書・テストデータ基盤）または β-8/9/10。
 
 ### β-1 設計方針（β-2 で確立した claim 基盤を全テーブルへ展開）
 
@@ -57,15 +58,18 @@ mock-login Edge Function を stg/dev 両環境で削除確認）。
   `*_tmp` を撤去し SELECT を `is_staff()` のみに（書込は service_role
   経由＝dispatch-report-schedules）。stg/dev の両環境に EF デプロイ
   +migration 適用済。typecheck/build グリーン（2026-05-19）
-- [ ] **F. 負テスト**: stg で 3 ユーザー × 別組織不可視を全テーブル抜き打ち検証 →
-  通れば dev へ展開 → β-1 完了
+- [x] **F. 負テスト**: stg で 3 ユーザー × 全テーブルの可視範囲・editor/
+  confirmer/admin/impersonation/公開 URL 全フロー OK（2026-05-19 inoue 確認）。
+  dev も同じ migration/EF を適用済 → **β-1 全クローズ**
 
 ### ▶ 次に再開するとき（中断ポイント: 2026-05-19）
 
-**次の一手 = β-1（RLS 全テーブル一般化）Phase A（helpers + alert_logs）。**
+**β-0/β-1/β-2/β-3/β-4 すべて完了。** 次は β-5（β UI/規約）/ β-6
+（顧客手順書）/ β-7（テストデータ基盤）/ β-8（招待）/ β-9（ツクルデ
+API）/ β-10（電話通知）と、refactor backlog（Sentry / CI/CD 等）の
+中から方針を決めて進める。
 
-旧 β-2f メモは下記履歴。β-2f は完了済み（mock-login 削除確認 / 0043
-適用済 / dev 展開済 / 3 ブランチ同期済）。
+旧 β-1 / β-2f メモは下記履歴。
 
 β-2f の状態と残り:
 - ✅ コード側レガシー撤去（`loadAuthSession`/`saveAuthSession`/
@@ -269,20 +273,34 @@ app_metadata に注入することを SQL レベルで実証済み。
 - [x] smoke test 済: webhook-milesight health-check 200 / pg_cron 4 ジョブ succeeded /
   send-notification-test で inoue@canbright.co.jp にメール到達確認
 
-### β-1: RLS 厳格化 🔴 ※実施順は β-2 の後（JWT の org_id claim が前提）
+### β-1: RLS 厳格化 ✅ 完了（2026-05-19）
 
-- [ ] **設計**: `organization_id` ベースの policy 雛形を作成
-- [ ] **全テーブル**の policy を `using (organization_id = (auth.jwt() ->> 'org_id')::uuid)` に置換
-  - organizations / users / organization_members
-  - devices / sensor_props / gateway_props / sensor_categories / sensor_groups
-  - sensor_readings / sensor_notes / alert_logs / dashboard_checkins
-  - notification_groups / notification_deliveries
-  - report_schedules / report_delivery_links
-  - manufacturer_integrations / webhook_inbox
-  - manual_categories / manual_pages
-- [ ] 暫定 policy（`webhook_inbox select tmp` 等）を全廃
-- [ ] super_admin / staff 用の特例 policy（service_role bypass）
-- [ ] stg でテナント横断アクセス検証（負のテスト）
+- [x] **設計**: `public.current_org_id()`（0042）/ `public.is_staff()` /
+  `public.is_super_admin()`（0044）をヘルパに、テナント = current_org_id
+  限定、admin = is_staff バイパス、global write = is_super_admin で統一
+- [x] **全テーブル**を claim ベースに移行（0042/0045〜0051）
+  - sensor_notes / dashboard_checkins（0042）
+  - alert_logs（0045 + 0047 staff バイパス）
+  - sensor_categories / sensor_groups / manufacturer_integrations /
+    report_schedules / notification_groups（0046、notif は staff バイパス）
+  - devices / sensor_props / gateway_props / sensor_readings /
+    dashboards（0048、devices/props は staff バイパス、readings は
+    テナント SELECT のみ、書込は service_role）
+  - organizations / users / organization_members / staff_assignments /
+    staff_audit_logs（0049、is_staff バイパス込み）
+  - manual_categories / manual_pages（0050、全認証 read /
+    is_super_admin write）+ manual-images storage bucket / webhook_inbox
+  - report_delivery_links（0051、is_staff SELECT のみ）
+- [x] 暫定 `*_tmp` ポリシー全廃 + モック期 `admin_full=true` 全撤去
+- [x] super_admin / support = `is_staff()`、書込制限あり global =
+  `is_super_admin()`。service_role は bypassrls で自動バイパス
+- [x] 公開ダッシュボード/レポートの anon 直 SELECT を撤去し、
+  share-dashboard / share-report Edge Function（service_role）に統一
+- [x] stg/dev 両環境で実機負テスト OK（inoue 2026-05-19）
+
+> 補足: support の cross-tenant 範囲を `staff_assignments` で細分する
+> 制御は β-1 後の refinement として残置（現状は is_staff = super_admin |
+> support 一括バイパス）。
 
 ### β-2: Supabase Auth 統合 🔴 ◀ 次に着手（β-1 の前提）
 
